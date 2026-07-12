@@ -14,8 +14,9 @@
     "windows": [
       {
         "title": "tauri-android-app",
-        "width": 800,
-        "height": 600
+        "width": 412,
+        "height": 815,
+        "resizable": false
       }
     ],
     "security": {
