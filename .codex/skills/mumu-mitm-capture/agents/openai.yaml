@@ -1,0 +1,4 @@
+interface:
+  display_name: "MuMu HTTPS Capture"
+  short_description: "»Ö¸´ MuMu ¶¤¶¤ HTTPS ×¥°üÓë CA ¹ÒÔØ"
+  default_prompt: "Use $mumu-mitm-capture to restore authorized MuMu DingTalk HTTPS capture."

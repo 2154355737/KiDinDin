@@ -1,7 +1,9 @@
 import type { OrderStatus, WorkOrder } from "../types/workOrder";
 import { Icon } from "./Icon";
 
-export function StatusBadge({ status }: { status: OrderStatus }) { return <span className={`status status-${status}`}>{status}</span>; }
+const statusClass: Record<OrderStatus, string> = { "待处理": "pending", "处理中": "processing", "已完成": "completed", "已结束": "ended", "待提交": "submitting", "关闭失败": "failed", "日志失败": "failed", "未知": "unknown" };
+
+export function StatusBadge({ status }: { status: OrderStatus }) { return <span className={`status status-${statusClass[status]}`}>{status}</span>; }
 
 export function WorkOrderList({ orders, selected = [], onToggle, onDetail }: { orders: WorkOrder[]; selected?: string[]; onToggle?: (id: string) => void; onDetail: (order: WorkOrder) => void }) {
   const selectable = Boolean(onToggle);
