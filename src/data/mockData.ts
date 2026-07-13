@@ -16,9 +16,6 @@ export const initialOrders: WorkOrder[] = [
   { id: "AJ202607120087", resident: "马先生", unit: "10栋 1205", address: "武侯区桐梓林壹号 · 10栋", time: "19:00–21:00", status: "待准备" },
   { id: "AJ202607120091", resident: "朱女士", unit: "6栋 2703", address: "锦江区东湖国际 · 6栋", time: "19:00–21:00", status: "待准备" },
   { id: "AJ202607120096", resident: "罗先生", unit: "3栋 508", address: "高新区天府新谷 · 3栋", time: "20:00–22:00", status: "待准备" },
-    { id: "AJ202607120096", resident: "罗先生", unit: "3栋 508", address: "高新区天府新谷 · 3栋", time: "20:00–22:00", status: "待准备" },
-      { id: "AJ202607120096", resident: "罗先生", unit: "3栋 508", address: "高新区天府新谷 · 3栋", time: "20:00–22:00", status: "待准备" },
-        { id: "AJ202607120096", resident: "罗先生", unit: "3栋 508", address: "高新区天府新谷 · 3栋", time: "20:00–22:00", status: "待准备" },
 ];
 
 export const historyPhotos = ["历史现场 · 2026-07-03", "历史现场 · 2026-06-28", "历史现场 · 2026-06-18"];
