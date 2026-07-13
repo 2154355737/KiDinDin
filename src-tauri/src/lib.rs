@@ -2,16 +2,19 @@ use base64::{engine::general_purpose::STANDARD, Engine as _};
 use reqwest::{header, multipart, Client, Method};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::sync::Mutex;
-use tauri::State;
+use std::{fs, path::PathBuf, sync::Mutex, time::{SystemTime, UNIX_EPOCH}};
+use tauri::{AppHandle, Manager, State};
 use uuid::Uuid;
 
 const DEFAULT_TARGET: &str = "https://cis.whng.com.cn";
 const DINGTALK_REFERER: &str = "https://2021001142645745.eco.dingtalkapps.com/index.html";
+const DINGTALK_APP_ID: &str = "com.alibaba.android.rimet";
+const DINGTALK_APP_VERSION: &str = "8.3.35";
+const DINGTALK_PLATFORM: &str = "Android 16 · zh-CN";
 const MOBILE_USER_AGENT: &str = "Mozilla/5.0 (Linux; Android 16; zh-CN) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/100.0.4896.58 Mobile Safari/537.36 AliApp(DingTalk/8.3.35) com.alibaba.android.rimet";
 const FILE_UPLOAD_USER_AGENT: &str = "MiniFileUploaderAliApp(DingTalk/8.3.35) com.alibaba.android.rimet";
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Deserialize, Serialize)]
 struct CisSession {
     access_token: String,
     cookie: String,
@@ -20,6 +23,23 @@ struct CisSession {
     username: Option<String>,
     employee_number: Option<String>,
     expires_at: Option<i64>,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+struct AuthHistoryEntry {
+    id: String,
+    last_used_at: u64,
+    session: CisSession,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AuthHistorySummary {
+    id: String,
+    employee_number: Option<String>,
+    last_used_at: u64,
+    token_hint: String,
+    username: Option<String>,
 }
 
 struct CisState {
@@ -54,6 +74,25 @@ struct SessionStatus {
     username: Option<String>,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DeviceIdentityPreview {
+    app_id: String,
+    app_version: String,
+    platform: String,
+    request_agent: String,
+    user_agent: String,
+    referer: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DownloadedFile {
+    base64: String,
+    mime: String,
+    name: String,
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct UploadFile {
@@ -72,6 +111,62 @@ fn session_status(session: Option<&CisSession>) -> SessionStatus {
         employee_number: session.and_then(|value| value.employee_number.clone()),
         expires_at: session.and_then(|value| value.expires_at),
         username: session.and_then(|value| value.username.clone()),
+    }
+}
+
+fn current_timestamp() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
+}
+
+fn auth_history_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let directory = app.path().app_data_dir().map_err(|error| format!("无法定位本机凭据目录：{error}"))?;
+    fs::create_dir_all(&directory).map_err(|error| format!("无法创建本机凭据目录：{error}"))?;
+    Ok(directory.join("auth-history.json"))
+}
+
+fn read_auth_history(app: &AppHandle) -> Result<Vec<AuthHistoryEntry>, String> {
+    let path = auth_history_path(app)?;
+    if !path.exists() { return Ok(Vec::new()); }
+    let content = fs::read_to_string(path).map_err(|error| format!("读取历史凭据失败：{error}"))?;
+    serde_json::from_str(&content).map_err(|error| format!("历史凭据格式无效：{error}"))
+}
+
+fn write_auth_history(app: &AppHandle, history: &[AuthHistoryEntry]) -> Result<(), String> {
+    let payload = serde_json::to_string(history).map_err(|error| format!("序列化历史凭据失败：{error}"))?;
+    fs::write(auth_history_path(app)?, payload).map_err(|error| format!("保存历史凭据失败：{error}"))
+}
+
+fn account_key(session: &CisSession) -> String {
+    session.employee_number.clone().or_else(|| session.username.clone()).unwrap_or_else(|| session.access_token.chars().take(16).collect())
+}
+
+fn token_hint(token: &str) -> String {
+    let start: String = token.chars().take(6).collect();
+    let end: String = token.chars().rev().take(4).collect::<String>().chars().rev().collect();
+    format!("{}…{}", start, end)
+}
+
+fn remember_auth_session(app: &AppHandle, session: &CisSession) -> Result<(), String> {
+    let key = account_key(session);
+    let mut history = read_auth_history(app)?;
+    if let Some(entry) = history.iter_mut().find(|entry| account_key(&entry.session) == key) {
+        entry.session = session.clone();
+        entry.last_used_at = current_timestamp();
+    } else {
+        history.push(AuthHistoryEntry { id: Uuid::new_v4().to_string(), last_used_at: current_timestamp(), session: session.clone() });
+    }
+    history.sort_by(|left, right| right.last_used_at.cmp(&left.last_used_at));
+    history.truncate(8);
+    write_auth_history(app, &history)
+}
+
+fn history_summary(entry: &AuthHistoryEntry) -> AuthHistorySummary {
+    AuthHistorySummary {
+        id: entry.id.clone(),
+        employee_number: entry.session.employee_number.clone(),
+        last_used_at: entry.last_used_at,
+        token_hint: token_hint(&entry.session.access_token),
+        username: entry.session.username.clone(),
     }
 }
 
@@ -117,7 +212,7 @@ fn parse_session(input: SessionInput) -> Result<CisSession, String> {
 }
 
 fn request_url(session: &CisSession, path: &str) -> String {
-    if path.starts_with("https://") { path.to_string() } else { format!("{}{}", session.target, if path.starts_with('/') { path } else { "/" }) }
+    if path.starts_with("https://") || path.starts_with("http://") { path.to_string() } else { format!("{}{}", session.target, if path.starts_with('/') { path } else { "/" }) }
 }
 
 fn apply_headers(mut request: reqwest::RequestBuilder, session: &CisSession, is_upload: bool) -> reqwest::RequestBuilder {
@@ -151,10 +246,11 @@ fn cis_auth_status(state: State<'_, CisState>) -> Result<SessionStatus, String> 
 }
 
 #[tauri::command]
-fn cis_configure_session(input: SessionInput, state: State<'_, CisState>) -> Result<SessionStatus, String> {
+fn cis_configure_session(input: SessionInput, app: AppHandle, state: State<'_, CisState>) -> Result<SessionStatus, String> {
     let session = parse_session(input)?;
     let status = session_status(Some(&session));
-    *state.session.lock().map_err(|_| "会话锁定失败")? = Some(session);
+    *state.session.lock().map_err(|_| "会话锁定失败")? = Some(session.clone());
+    let _ = remember_auth_session(&app, &session);
     Ok(status)
 }
 
@@ -162,6 +258,54 @@ fn cis_configure_session(input: SessionInput, state: State<'_, CisState>) -> Res
 fn cis_clear_session(state: State<'_, CisState>) -> Result<SessionStatus, String> {
     *state.session.lock().map_err(|_| "会话锁定失败")? = None;
     Ok(session_status(None))
+}
+
+#[tauri::command]
+fn cis_auth_history(app: AppHandle) -> Result<Vec<AuthHistorySummary>, String> {
+    let mut history = read_auth_history(&app)?;
+    history.sort_by(|left, right| right.last_used_at.cmp(&left.last_used_at));
+    Ok(history.iter().map(history_summary).collect())
+}
+
+#[tauri::command]
+fn cis_restore_auth_history(id: String, app: AppHandle, state: State<'_, CisState>) -> Result<SessionStatus, String> {
+    let mut history = read_auth_history(&app)?;
+    let entry = history.iter_mut().find(|entry| entry.id == id).ok_or_else(|| "未找到该历史凭据".to_string())?;
+    entry.last_used_at = current_timestamp();
+    let session = entry.session.clone();
+    history.sort_by(|left, right| right.last_used_at.cmp(&left.last_used_at));
+    write_auth_history(&app, &history)?;
+    let status = session_status(Some(&session));
+    *state.session.lock().map_err(|_| "会话锁定失败")? = Some(session);
+    Ok(status)
+}
+
+#[tauri::command]
+fn device_identity_preview() -> DeviceIdentityPreview {
+    DeviceIdentityPreview {
+        app_id: DINGTALK_APP_ID.into(),
+        app_version: DINGTALK_APP_VERSION.into(),
+        platform: DINGTALK_PLATFORM.into(),
+        request_agent: "DDDigitalCis".into(),
+        user_agent: MOBILE_USER_AGENT.into(),
+        referer: DINGTALK_REFERER.into(),
+    }
+}
+
+#[tauri::command]
+async fn cis_download_file(path: String, file_name: String, state: State<'_, CisState>) -> Result<DownloadedFile, String> {
+    if path.trim().is_empty() { return Err("图片下载地址为空".into()); }
+    let session = state.session.lock().map_err(|_| "会话锁定失败")?.clone().ok_or_else(|| "登录已失效，请重新粘贴登录凭据".to_string())?;
+    let response = apply_headers(state.client.get(request_url(&session, &path)), &session, false)
+        .send().await.map_err(|error| format!("下载图片失败：{error}"))?;
+    let status = response.status();
+    if !status.is_success() {
+        let text = response.text().await.unwrap_or_default();
+        return Err(format!("下载图片返回 {status}：{}", text.chars().take(200).collect::<String>()));
+    }
+    let mime = response.headers().get(header::CONTENT_TYPE).and_then(|value| value.to_str().ok()).unwrap_or("image/jpeg").split(';').next().unwrap_or("image/jpeg").to_string();
+    let bytes = response.bytes().await.map_err(|error| format!("读取图片失败：{error}"))?;
+    Ok(DownloadedFile { base64: STANDARD.encode(bytes), mime, name: file_name })
 }
 
 #[tauri::command]
@@ -210,6 +354,10 @@ pub fn run() {
             cis_auth_status,
             cis_configure_session,
             cis_clear_session,
+            cis_auth_history,
+            cis_restore_auth_history,
+            device_identity_preview,
+            cis_download_file,
             cis_request,
             cis_upload_files
         ])

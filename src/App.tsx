@@ -1,20 +1,26 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { ChevronDown } from "lucide-react";
 import { AppDrawer } from "./components/AppDrawer";
 import { PrimaryNav } from "./components/Navigation";
 import { HomePage } from "./pages/HomePage";
 import { LoginPage } from "./pages/LoginPage";
 import { StatsPage } from "./pages/StatsPage";
 import { SubmitPage } from "./pages/SubmitPage";
-import { ConfirmPage, PreparePage, RecordsPage, RunningPage } from "./pages/WorkflowPages";
-import { configureAuthSession, fetchAuthStatus, logoutAuth } from "./services/authApi";
+import { ConfirmPage, ModePage, PreparePage, RecordsPage, RunningPage } from "./pages/WorkflowPages";
+import { configureAuthSession, fetchAuthHistory, fetchAuthStatus, logoutAuth, restoreAuthHistory, type AuthHistoryItem } from "./services/authApi";
 import {
   closeSecurityCheckWorkOrder,
   createWorkOrderExchangeLog,
+  downloadWorkOrderFile,
+  fetchHistoricalWorkOrders,
   fetchWorkOrderDetail,
+  fetchWorkOrderExchangeLogs,
+  fetchWorkOrderFiles,
   fetchWorkOrderUserAjInfo,
   fetchWorkOrders,
   uploadWorkOrderFiles,
   type CisWorkOrder,
+  type UploadedFile,
   type WorkOrderDetail,
 } from "./services/workOrderApi";
 import { isNativeRuntime, type AuthStatus } from "./services/tauri";
@@ -22,6 +28,36 @@ import { getWorkOrderStatus, matchesWorkOrderStatus, workOrderStatusOptions, typ
 
 const CLOSE_REASON_UNREACHABLE = "11";
 const EXCHANGE_TYPE_UNREACHABLE = "80";
+const DEFAULT_OPERATOR_NAME_STORAGE_KEY = "kidindin.default-operator-name";
+
+type HistoryPhotoCandidate = {
+  file: File;
+  historyLabel: string;
+  id: string;
+  originalName: string;
+  previewUrl: string;
+};
+
+type HistoryPhotoCacheEntry = {
+  error: string | null;
+  photos: HistoryPhotoCandidate[];
+};
+
+function textField(value: unknown) {
+  return typeof value === "string" || typeof value === "number" ? String(value).trim() : "";
+}
+
+function historyTimestamp(order: Record<string, unknown>) {
+  const value = textField(order.actualEndDate) || textField(order.updateTime) || textField(order.createTime);
+  const timestamp = Date.parse(value.replace(/-/g, "/"));
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
+function photoBizIds(order: Record<string, unknown>) {
+  return [...new Set([order.closeAttachBizId, order["closeAttachBizId-11"], order.woHeaderId].map(textField).filter(Boolean))];
+}
+
+const wait = (milliseconds: number) => new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
 
 function today() {
   const now = new Date();
@@ -64,16 +100,18 @@ function FilterPicker({ label, value, allLabel, options, open, onToggle, onSelec
   onToggle: () => void;
   onSelect: (value: string) => void;
 }) {
-  return <div className="filter-picker"><span>{label}</span><button type="button" className="filter-picker-trigger" onClick={onToggle} aria-expanded={open}>{value === "all" ? allLabel : value}<Icon name="chevron" size={15} /></button>{open && <div className="filter-picker-menu"><button type="button" className={value === "all" ? "active" : ""} onClick={() => onSelect("all")}>{allLabel}</button>{options.map((option) => <button type="button" key={option} className={value === option ? "active" : ""} onClick={() => onSelect(option)}>{option}</button>)}</div>}</div>;
+  return <div className="filter-picker"><span>{label}</span><button type="button" className="filter-picker-trigger" onClick={onToggle} aria-expanded={open}>{value === "all" ? allLabel : value}<ChevronDown className="filter-picker-icon" size={16} strokeWidth={2.2} /></button>{open && <div className="filter-picker-menu"><button type="button" className={value === "all" ? "active" : ""} onClick={() => onSelect("all")}>{allLabel}</button>{options.map((option) => <button type="button" key={option} className={value === option ? "active" : ""} onClick={() => onSelect(option)}>{option}</button>)}</div>}</div>;
 }
 
 export default function App() {
   const [auth, setAuth] = useState<AuthStatus | null>(null);
+  const [authHistory, setAuthHistory] = useState<AuthHistoryItem[]>([]);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loggingIn, setLoggingIn] = useState(false);
   const [screen, setScreen] = useState<Screen>("orders");
   const [mainTab, setMainTab] = useState<MainTab>("home");
   const [theme, setTheme] = useState<Theme>("system");
+  const [systemDark, setSystemDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<WorkOrderStatusFilter>("all");
   const [buildingFilter, setBuildingFilter] = useState("all");
@@ -82,10 +120,21 @@ export default function App() {
   const [selectedDate, setSelectedDate] = useState(today());
   const [orders, setOrders] = useState<WorkOrder[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
+  const [batchOrderIds, setBatchOrderIds] = useState<string[]>([]);
   const [activeOrderId, setActiveOrderId] = useState("");
-  const [historyFile, setHistoryFile] = useState<File | null>(null);
+  const [historyFiles, setHistoryFiles] = useState<Record<string, File>>({});
+  const [historyMode, setHistoryMode] = useState<"manual" | "auto">("manual");
+  const [submitMode, setSubmitMode] = useState<"manual" | "historical">("manual");
+  const [submitIntervalMinSeconds, setSubmitIntervalMinSeconds] = useState(5);
+  const [submitIntervalMaxSeconds, setSubmitIntervalMaxSeconds] = useState(10);
+  const [historyPhotos, setHistoryPhotos] = useState<HistoryPhotoCandidate[]>([]);
+  const [historyPhotoLoading, setHistoryPhotoLoading] = useState(false);
+  const [historyPhotoError, setHistoryPhotoError] = useState<string | null>(null);
+  const [historyPhotoCache, setHistoryPhotoCache] = useState<Record<string, HistoryPhotoCacheEntry>>({});
   const [libraryFile, setLibraryFile] = useState<File | null>(null);
   const [reason, setReason] = useState("到访不遇-有居住痕迹");
+  const [remark, setRemark] = useState("");
+  const [customOperatorName, setCustomOperatorName] = useState(() => localStorage.getItem(DEFAULT_OPERATOR_NAME_STORAGE_KEY)?.trim() || "段鑫");
   const [drawer, setDrawer] = useState<DrawerKind | null>(null);
   const [filterOpen, setFilterOpen] = useState(false);
   const [loadingOrders, setLoadingOrders] = useState(false);
@@ -100,8 +149,13 @@ export default function App() {
   const [detailError, setDetailError] = useState<string | null>(null);
 
   const loggedIn = Boolean(auth?.authenticated);
+  const appliedTheme = theme === "system" ? (systemDark ? "dark" : "light") : theme;
+  const operatorName = customOperatorName.trim() || "段鑫";
   const activeOrder = orders.find((order) => order.id === activeOrderId) ?? orders[0];
-  const selectedOrders = useMemo(() => orders.filter((order) => selected.includes(order.id)), [orders, selected]);
+  const activeHistoryFile = activeOrder ? historyFiles[activeOrder.id] ?? null : null;
+  const selectedOrders = useMemo(() => orders.filter((order) => selected.includes(order.id) && order.backendStatusCode === "20"), [orders, selected]);
+  const pendingSelectedIds = useMemo(() => selectedOrders.map((order) => order.id), [selectedOrders]);
+  const batchOrders = useMemo(() => orders.filter((order) => batchOrderIds.includes(order.id)), [batchOrderIds, orders]);
   const filteredOrders = useMemo(() => {
     const keyword = query.trim().toLowerCase();
     return orders.filter((order) =>
@@ -119,6 +173,7 @@ export default function App() {
     () => [...new Set(orders.filter((order) => buildingFilter === "all" || order.building === buildingFilter).map((order) => order.unitNumber).filter(Boolean))].sort((left, right) => left.localeCompare(right, "zh-CN")),
     [buildingFilter, orders]
   );
+  const pendingSubmitOrders = useMemo(() => filteredOrders.filter((order) => order.backendStatusCode === "20"), [filteredOrders]);
 
   useEffect(() => {
     if (unitFilter !== "all" && !unitOptions.includes(unitFilter)) setUnitFilter("all");
@@ -132,7 +187,8 @@ export default function App() {
       const next = response.data.map(toUiOrder);
       setOrders(next);
       setBuildingFilter((current) => current === "all" || next.some((order) => order.building === current) ? current : "all");
-      setSelected((current) => current.filter((id) => next.some((order) => order.id === id)));
+      setUnitFilter((current) => current === "all" || next.some((order) => order.unitNumber === current) ? current : "all");
+      setSelected((current) => current.filter((id) => next.some((order) => order.id === id && order.backendStatusCode === "20")));
       setActiveOrderId((current) => next.some((order) => order.id === current) ? current : (next[0]?.id ?? ""));
     } catch (error) {
       setOrders([]); setLoadError(messageOf(error));
@@ -140,14 +196,27 @@ export default function App() {
   }, [loggedIn, selectedDate]);
 
   useEffect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const syncTheme = () => setSystemDark(media.matches);
+    media.addEventListener("change", syncTheme);
+    return () => media.removeEventListener("change", syncTheme);
+  }, []);
+  useEffect(() => { localStorage.setItem(DEFAULT_OPERATOR_NAME_STORAGE_KEY, customOperatorName.trim() || "段鑫"); }, [customOperatorName]);
+  useEffect(() => {
     if (!isNativeRuntime()) {
       setAuth({ authenticated: false, employeeNumber: null, expiresAt: null, username: null });
       setLoginError("当前是浏览器预览，原生登录不可用。请安装并打开 KiDinDin APK 后再粘贴凭据。");
       return;
     }
     void fetchAuthStatus().then(setAuth).catch(() => setAuth({ authenticated: false, employeeNumber: null, expiresAt: null, username: null }));
+    void fetchAuthHistory().then(setAuthHistory).catch(() => setAuthHistory([]));
   }, []);
   useEffect(() => { void loadOrders(); }, [loadOrders]);
+  useEffect(() => {
+    const cached = historyPhotoCache[activeOrderId];
+    setHistoryPhotos(cached?.photos ?? []);
+    setHistoryPhotoError(cached?.error ?? null);
+  }, [activeOrderId, historyPhotoCache]);
   useEffect(() => {
     if (drawer !== "detail" || !activeOrder) return;
     let cancelled = false;
@@ -176,23 +245,119 @@ export default function App() {
     try {
       const status = await configureAuthSession(input);
       setAuth(status);
+      void fetchAuthHistory().then(setAuthHistory).catch(() => undefined);
+    } catch (error) { setLoginError(messageOf(error)); }
+    finally { setLoggingIn(false); }
+  };
+
+  const loginWithHistory = async (id: string) => {
+    setLoggingIn(true); setLoginError(null);
+    try {
+      const status = await restoreAuthHistory(id);
+      setAuth(status);
+      void fetchAuthHistory().then(setAuthHistory).catch(() => undefined);
     } catch (error) { setLoginError(messageOf(error)); }
     finally { setLoggingIn(false); }
   };
 
   const setOrderStatus = (id: string, status: OrderStatus, backendStatusCode?: string) => setOrders((current) => current.map((order) => order.id === id ? { ...order, backendStatusCode: backendStatusCode ?? order.backendStatusCode, status } : order));
   const toggleOrder = (id: string) => setSelected((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
-  const toggleAllOrders = () => setSelected((current) => {
-    const visibleIds = filteredOrders.map((order) => order.id);
+  const toggleAllPendingOrders = () => setSelected((current) => {
+    const visibleIds = pendingSubmitOrders.map((order) => order.id);
     const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => current.includes(id));
     return allVisibleSelected ? current.filter((id) => !visibleIds.includes(id)) : [...new Set([...current, ...visibleIds])];
   });
 
+  const findHistoricalPhotos = async () => {
+    if (!activeOrder) return;
+    const orderId = activeOrder.id;
+    setHistoryMode("auto"); setHistoryPhotoLoading(true); setHistoryPhotoError(null); setHistoryPhotos([]);
+    try {
+      const current = activeOrder.raw ?? {};
+      const currentUser = (current.userinfo ?? {}) as Record<string, unknown>;
+      let userinfoId = textField(current.userinfoId) || textField(currentUser.userInfoId);
+      if (!userinfoId) {
+        const detailResponse = await fetchWorkOrderDetail(activeOrder.woHeaderId);
+        const header = (detailResponse.data.tcisWoHeaderDto ?? {}) as Record<string, unknown>;
+        const userInfo = (header.userinfo ?? {}) as Record<string, unknown>;
+        userinfoId = textField(header.userinfoId) || textField(userInfo.userInfoId);
+      }
+      if (!userinfoId) throw new Error("当前工单缺少 userinfoId，无法查询历史到访照片");
+
+      const historyOrders = await fetchHistoricalWorkOrders(userinfoId);
+      const candidates = historyOrders
+        .filter((item) => textField(item.woHeaderId) !== activeOrder.woHeaderId && textField(item.statusCode) === "60")
+        .sort((left, right) => historyTimestamp(right) - historyTimestamp(left));
+      if (!candidates.length) throw new Error("未找到同一用户已结束的历史工单");
+
+      for (const historyOrder of candidates) {
+        const historyId = textField(historyOrder.woHeaderId);
+        if (!historyId) continue;
+        const logs = await fetchWorkOrderExchangeLogs(historyId);
+        if (!logs.some((log) => JSON.stringify(log).includes("到访不遇"))) continue;
+
+        for (const bizId of photoBizIds(historyOrder)) {
+          const attachments = (await fetchWorkOrderFiles(bizId)).filter((file) => textField(file.downloadFilePath));
+          if (!attachments.length) continue;
+          const downloaded = await Promise.allSettled(attachments.slice(0, 12).map(async (attachment: UploadedFile, index) => {
+            const file = await downloadWorkOrderFile(attachment);
+            return {
+              file,
+              historyLabel: textField(historyOrder.woNumber) || historyId,
+              id: `${historyId}-${attachment.attachId ?? attachment.downloadFilePath ?? index}`,
+              originalName: textField(attachment.fileName) || file.name,
+              previewUrl: URL.createObjectURL(file),
+            };
+          }));
+          const photos = downloaded.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
+          if (photos.length) {
+            setHistoryPhotos(photos);
+            setHistoryPhotoCache((current) => ({ ...current, [orderId]: { error: null, photos } }));
+            return;
+          }
+        }
+      }
+      throw new Error("已检查历史已结束工单，但未找到含“到访不遇”日志的可下载照片");
+    } catch (error) {
+      const message = messageOf(error);
+      setHistoryPhotoError(message);
+      setHistoryPhotoCache((current) => ({ ...current, [orderId]: { error: message, photos: [] } }));
+      setHistoryFiles((current) => {
+        const next = { ...current };
+        delete next[orderId];
+        return next;
+      });
+      const remainingOrders = selectedOrders.filter((order) => order.id !== orderId);
+      setSelected((current) => current.filter((id) => id !== orderId));
+      if (remainingOrders.length) {
+        setActiveOrderId(remainingOrders[0].id);
+      } else {
+        setLoadError(`工单 ${activeOrder.woNumber} 没有可用的历史到访不遇照片，已取消提交队列`);
+        setScreen("select");
+      }
+    }
+    finally { setHistoryPhotoLoading(false); }
+  };
+
+  useEffect(() => {
+    if (screen !== "prepare" || historyMode !== "auto" || !activeOrder || historyPhotoLoading || historyPhotoCache[activeOrder.id]) return;
+    void findHistoricalPhotos();
+  }, [activeOrder, historyMode, historyPhotoCache, historyPhotoLoading, screen]);
+
   const runBatch = async () => {
-    if (!historyFile || !libraryFile || !selectedOrders.length) return;
-    setRunning(true); setPaused(false); setScreen("running");
+    if (!libraryFile || !selectedOrders.length || selectedOrders.some((order) => !historyFiles[order.id])) return;
+    setBatchOrderIds(selectedOrders.map((order) => order.id));
+    setRunning(true); setPaused(false); setCurrentIndex(0); setScreen("running");
     for (let index = 0; index < selectedOrders.length; index += 1) {
       const order = selectedOrders[index];
+      const historyFile = historyFiles[order.id];
+      if (index > 0 && submitIntervalMaxSeconds > 0) {
+        const minSeconds = Math.min(submitIntervalMinSeconds, submitIntervalMaxSeconds);
+        const maxSeconds = Math.max(submitIntervalMinSeconds, submitIntervalMaxSeconds);
+        const delaySeconds = minSeconds + Math.floor(Math.random() * (maxSeconds - minSeconds + 1));
+        setRunMessage(`随机等待 ${delaySeconds} 秒后提交下一单…`);
+        await wait(delaySeconds * 1000);
+      }
       setCurrentIndex(index + 1);
       try {
         setRunMessage(`正在上传 ${order.woNumber} 的两张照片…`);
@@ -204,7 +369,7 @@ export default function App() {
           "closeAttachBizId-ZC": "",
           closeAttachBizId: bizId,
           closeReason: CLOSE_REASON_UNREACHABLE,
-          remark: reason,
+          remark,
           woHeaderId: order.woHeaderId,
         });
       } catch (error) {
@@ -216,42 +381,44 @@ export default function App() {
         setRunMessage(`正在写入 ${order.woNumber} 的流转日志…`);
         await createWorkOrderExchangeLog({
           exchangeType: EXCHANGE_TYPE_UNREACHABLE,
-          params: { closeReason: reason, remark: reason },
-          userName: auth?.username || auth?.employeeNumber || "当前操作员",
+          params: { closeReason: reason, remark },
+          userName: operatorName.trim() || "段鑫",
           woHeaderId: order.woHeaderId,
           woNumber: order.woNumber,
         });
         setOrderStatus(order.id, "已结束", "60");
+        setSelected((current) => current.filter((id) => id !== order.id));
       } catch (error) {
         setOrderStatus(order.id, "日志失败");
         setRunMessage(`${order.woNumber} 已关闭，流转日志失败：${messageOf(error)}`);
       }
     }
-    setRunning(false); setRunMessage("本次批量任务已结束"); setScreen("records"); setMainTab("stats");
+    setRunning(false); setRunMessage("本次批量任务已结束"); setScreen("records"); setMainTab("submit");
   };
 
   const retryLog = async (id: string) => {
     const order = orders.find((item) => item.id === id); if (!order) return;
     try {
-      await createWorkOrderExchangeLog({ exchangeType: EXCHANGE_TYPE_UNREACHABLE, params: { closeReason: reason, remark: reason }, userName: auth?.username || auth?.employeeNumber || "当前操作员", woHeaderId: order.woHeaderId, woNumber: order.woNumber });
+      await createWorkOrderExchangeLog({ exchangeType: EXCHANGE_TYPE_UNREACHABLE, params: { closeReason: reason, remark }, userName: operatorName.trim() || "段鑫", woHeaderId: order.woHeaderId, woNumber: order.woNumber });
       setOrderStatus(id, "已结束", "60");
     } catch (error) { setLoadError(`补发日志失败：${messageOf(error)}`); }
   };
 
-  if (!loggedIn) return <div className={`app-shell theme-${theme}`}><main className="phone-frame"><LoginPage onLogin={login} error={loginError} submitting={loggingIn} /></main></div>;
+  if (!loggedIn) return <div className={`app-shell theme-${appliedTheme}`}><main className="phone-frame"><LoginPage onLogin={login} history={authHistory} error={loginError} submitting={loggingIn} onRestoreHistory={loginWithHistory} /></main></div>;
 
-  return <div className={`app-shell theme-${theme}`}><main className="phone-frame">
+  return <div className={`app-shell theme-${appliedTheme}`}><main className="phone-frame">
     {loadError ? <p className="network-error">{loadError}<button onClick={() => void loadOrders()}>重试</button></p> : null}
     {screen === "orders" && mainTab === "home" && <HomePage orders={filteredOrders} query={query} date={selectedDate} onQueryChange={setQuery} onDateChange={setSelectedDate} onOpenSettings={() => setDrawer("settings")} onFilter={() => setFilterOpen(true)} onDetail={(order) => { setActiveOrderId(order.id); setDrawer("detail"); }} />}
     {screen === "orders" && mainTab === "stats" && <StatsPage orders={orders} date={selectedDate} onDateChange={setSelectedDate} onRetry={retryLog} />}
-    {screen === "orders" && mainTab === "submit" && <SubmitPage orders={filteredOrders} selected={selected} date={selectedDate} onDateChange={setSelectedDate} onFilter={() => setFilterOpen(true)} onToggle={toggleOrder} onToggleAll={toggleAllOrders} onDetail={(order) => { setActiveOrderId(order.id); setDrawer("detail"); }} onPrepare={() => { if (selected.length) { setActiveOrderId(selected[0]); setScreen("prepare"); } }} />}
-    {screen === "prepare" && activeOrder && <PreparePage orders={selectedOrders} activeOrder={activeOrder} historyFileName={historyFile?.name ?? ""} libraryFileName={libraryFile?.name ?? ""} date={selectedDate} onDateChange={setSelectedDate} onBack={() => setScreen("orders")} onSelectOrder={setActiveOrderId} onPickHistoryFile={setHistoryFile} onPickLibraryFile={setLibraryFile} onNext={() => { if (!historyFile || !libraryFile) { setLoadError("请先选择历史照片和本机补图"); return; } setScreen("confirm"); }} />}
-    {screen === "confirm" && <ConfirmPage orders={selectedOrders} reason={reason} date={selectedDate} onDateChange={setSelectedDate} onBack={() => setScreen("prepare")} onReasonChange={setReason} onStart={() => void runBatch()} />}
-    {screen === "running" && <RunningPage total={selectedOrders.length} paused={paused} date={selectedDate} onDateChange={setSelectedDate} onBack={() => undefined} onTogglePause={() => setPaused((value) => !value)} onFinish={() => setScreen("records")} current={currentIndex} message={runMessage} running={running} />}
-    {screen === "records" && <RecordsPage orders={orders} date={selectedDate} onDateChange={setSelectedDate} onBack={() => { setScreen("orders"); setMainTab("stats"); }} onRetry={(id) => void retryLog(id)} />}
-    {drawer && activeOrder && <AppDrawer type={drawer} order={activeOrder} detail={detail} detailAjInfo={detailAjInfo} detailLoading={detailLoading} detailError={detailError} theme={theme} libraryPhotos={[]} setTheme={setTheme} onClose={() => setDrawer(null)} onLogout={() => { void logoutAuth().then(setAuth); setDrawer(null); setScreen("orders"); }} />}
-    {filterOpen && <div className="filter-overlay" onClick={() => setFilterOpen(false)}><section className="filter-panel" onClick={(event) => event.stopPropagation()}><h2>筛选工单</h2><p>关键词、楼栋和工单状态会叠加筛选；楼栋选项来自当前日期实际加载的工单。</p><label className="building-filter"><span>楼栋</span><select value={buildingFilter} onChange={(event) => setBuildingFilter(event.target.value)}><option value="all">全部楼栋</option>{buildingOptions.map((building) => <option key={building} value={building}>{building}</option>)}</select></label><div className="status-filter-options">{workOrderStatusOptions.map((option) => <button key={option.value} className={statusFilter === option.value ? "active" : ""} onClick={() => setStatusFilter(option.value)}>{option.label}</button>)}</div><button onClick={() => setFilterOpen(false)}>完成（{filteredOrders.length} 条）</button></section></div>}
+    {screen === "mode" && <ModePage mode={submitMode} intervalMinSeconds={submitIntervalMinSeconds} intervalMaxSeconds={submitIntervalMaxSeconds} onModeChange={(mode) => { setSubmitMode(mode); setHistoryMode(mode === "historical" ? "auto" : "manual"); }} onIntervalMinChange={(value) => { setSubmitIntervalMinSeconds(value); setSubmitIntervalMaxSeconds((current) => Math.max(current, value)); }} onIntervalMaxChange={(value) => { setSubmitIntervalMaxSeconds(value); setSubmitIntervalMinSeconds((current) => Math.min(current, value)); }} onBack={() => { setScreen("orders"); setMainTab("home"); }} onNext={() => setScreen("select")} />}
+    {screen === "select" && <SubmitPage orders={pendingSubmitOrders} selected={pendingSelectedIds} mode={submitMode} date={selectedDate} onDateChange={setSelectedDate} onBack={() => setScreen("mode")} onFilter={() => setFilterOpen(true)} onToggle={toggleOrder} onToggleAll={toggleAllPendingOrders} onDetail={(order) => { setActiveOrderId(order.id); setDrawer("detail"); }} onPrepare={() => { if (selectedOrders.length) { setActiveOrderId(selectedOrders[0].id); setHistoryMode(submitMode === "historical" ? "auto" : "manual"); setScreen("prepare"); } }} />}
+    {screen === "prepare" && activeOrder && <PreparePage orders={selectedOrders} activeOrder={activeOrder} historyFileName={activeHistoryFile?.name ?? ""} historyMode={historyMode} historyPhotos={historyPhotos} historyPhotoError={historyPhotoError} historyPhotoLoading={historyPhotoLoading} libraryFileName={libraryFile?.name ?? ""} date={selectedDate} onDateChange={setSelectedDate} onBack={() => setScreen("select")} onSelectOrder={setActiveOrderId} onPickHistoryFile={(file) => { setHistoryMode("manual"); setHistoryFiles((current) => { const next = { ...current }; if (file) next[activeOrder.id] = file; else delete next[activeOrder.id]; return next; }); }} onHistoryModeChange={setHistoryMode} onFindHistoricalPhotos={() => void findHistoricalPhotos()} onSelectHistoricalPhoto={(photo) => { setHistoryMode("auto"); setHistoryFiles((current) => ({ ...current, [activeOrder.id]: photo.file })); }} onPickLibraryFile={setLibraryFile} onNext={() => { if (!libraryFile || selectedOrders.some((order) => !historyFiles[order.id])) { setLoadError("请为每个工单选择一张历史照片，并选择本机补图"); return; } setScreen("confirm"); }} />}
+    {screen === "confirm" && <ConfirmPage orders={selectedOrders} historyFiles={historyFiles} libraryFile={libraryFile} reason={reason} remark={remark} operatorName={operatorName} operatorLocked={false} date={selectedDate} onDateChange={setSelectedDate} onBack={() => setScreen("prepare")} onReasonChange={setReason} onRemarkChange={setRemark} onOperatorNameChange={setCustomOperatorName} onStart={() => void runBatch()} />}
+    {screen === "running" && <RunningPage total={batchOrders.length || selectedOrders.length} paused={paused} date={selectedDate} onDateChange={setSelectedDate} onBack={() => undefined} onTogglePause={() => setPaused((value) => !value)} onFinish={() => setScreen("records")} current={currentIndex} message={runMessage} running={running} />}
+    {screen === "records" && <RecordsPage orders={batchOrders} date={selectedDate} onDateChange={setSelectedDate} onBack={() => setScreen("mode")} onRetry={(id) => void retryLog(id)} />}
+    {drawer && activeOrder && <AppDrawer type={drawer} order={activeOrder} detail={detail} detailAjInfo={detailAjInfo} detailLoading={detailLoading} detailError={detailError} theme={theme} libraryPhotos={[]} defaultOperatorName={customOperatorName} setDefaultOperatorName={setCustomOperatorName} setTheme={setTheme} onClose={() => setDrawer(null)} onLogout={() => { void logoutAuth().then(setAuth); setDrawer(null); setScreen("orders"); }} />}
+    {filterOpen && <div className="filter-overlay" onClick={() => { setOpenFilterPicker(null); setFilterOpen(false); }}><section className="filter-panel" onClick={(event) => event.stopPropagation()}><h2>筛选工单</h2><p>关键词、楼栋、单元和工单状态会叠加筛选；楼栋和单元选项来自当前日期实际加载的工单。</p><FilterPicker label="楼栋" value={buildingFilter} allLabel="全部楼栋" options={buildingOptions} open={openFilterPicker === "building"} onToggle={() => setOpenFilterPicker((current) => current === "building" ? null : "building")} onSelect={(value) => { setBuildingFilter(value); setUnitFilter("all"); setOpenFilterPicker(null); }} /><FilterPicker label="单元" value={unitFilter} allLabel="全部单元" options={unitOptions} open={openFilterPicker === "unit"} onToggle={() => setOpenFilterPicker((current) => current === "unit" ? null : "unit")} onSelect={(value) => { setUnitFilter(value); setOpenFilterPicker(null); }} /><div className="status-filter-options">{workOrderStatusOptions.map((option) => <button key={option.value} className={statusFilter === option.value ? "active" : ""} onClick={() => setStatusFilter(option.value)}>{option.label}</button>)}</div><button onClick={() => { setOpenFilterPicker(null); setFilterOpen(false); }}>完成（{filteredOrders.length} 条）</button></section></div>}
     {loadingOrders ? <div className="loading-mask">正在加载工单…</div> : null}
-    {screen === "orders" && <PrimaryNav active={mainTab} onChange={(tab) => { setMainTab(tab); setScreen("orders"); }} />}
+    {screen === "orders" && <PrimaryNav active={mainTab} onChange={(tab) => { setMainTab(tab); setScreen(tab === "submit" ? "mode" : "orders"); }} />}
   </main></div>;
 }

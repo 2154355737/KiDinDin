@@ -5,6 +5,15 @@ export type AuthStatus = {
   username: string | null;
 };
 
+export type DeviceIdentityPreview = {
+  appId: string;
+  appVersion: string;
+  platform: string;
+  requestAgent: string;
+  userAgent: string;
+  referer: string;
+};
+
 export type NativeUploadFile = {
   name: string;
   mime?: string;
@@ -46,4 +55,8 @@ export async function fileToNativeUpload(file: File): Promise<NativeUploadFile> 
 
 export function nativeRequest(path: string, method: string, body?: unknown) {
   return nativeInvoke<unknown>("cis_request", { body: body ?? null, method, path });
+}
+
+export function fetchDeviceIdentityPreview() {
+  return nativeInvoke<DeviceIdentityPreview>("device_identity_preview");
 }

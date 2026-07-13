@@ -49,6 +49,12 @@ export type UploadedFile = {
   [key: string]: unknown;
 };
 
+type DownloadedFile = {
+  base64: string;
+  mime: string;
+  name: string;
+};
+
 export type ExchangeLog = {
   createTime?: string | null;
   createBy?: string | null;
@@ -138,6 +144,16 @@ export async function fetchWorkOrderFiles(bizId: string) {
     `${paths.fileList}?${new URLSearchParams({ bizId })}`, "GET"
   );
   return Array.isArray(response.data) ? response.data : response.data?.sysAttachList ?? response.data?.records ?? response.data?.list ?? [];
+}
+
+export async function downloadWorkOrderFile(file: UploadedFile) {
+  const path = String(file.downloadFilePath ?? "").trim();
+  if (!path) throw new Error("历史附件缺少下载地址");
+  const name = String(file.fileName ?? "历史到访照片.jpg");
+  const downloaded = await nativeInvoke<DownloadedFile>("cis_download_file", { fileName: name, path });
+  const binary = atob(downloaded.base64);
+  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  return new File([bytes], downloaded.name || name, { type: downloaded.mime || "image/jpeg" });
 }
 
 export function updateLastHouseholdTime(payload: {
