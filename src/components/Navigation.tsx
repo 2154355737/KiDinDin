@@ -8,7 +8,7 @@ export function FilterButton({ onClick }: { onClick: () => void }) {
 }
 
 export function PrimaryNav({ active, onChange }: { active: MainTab; onChange: (tab: MainTab) => void }) {
-  const items: Array<{ id: MainTab; label: string; icon: string }> = [{ id: "home", label: "首页", icon: "home" }, { id: "stats", label: "统计", icon: "chart" }, { id: "submit", label: "提交", icon: "send" }];
+  const items: Array<{ id: MainTab; label: string; icon: string }> = [{ id: "stats", label: "统计", icon: "chart" }, { id: "home", label: "首页", icon: "home" }, { id: "submit", label: "提交", icon: "send" }];
   return <nav className="bottom-nav" aria-label="主导航">{items.map((item) => <button key={item.id} className={active === item.id ? "active" : ""} onClick={() => onChange(item.id)}><Icon name={item.icon} size={20} /><span>{item.label}</span></button>)}</nav>;
 }
 

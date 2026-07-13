@@ -26,3 +26,11 @@ export const fetchAuthHistory = () => nativeInvoke<AuthHistoryItem[]>("cis_auth_
 
 export const restoreAuthHistory = (id: string) =>
   nativeInvoke<AuthStatus>("cis_restore_auth_history", { id });
+
+export const refreshAuthSession = () => nativeInvoke<AuthStatus>("cis_refresh_auth_session");
+
+export const setAuthRefreshToken = (refreshToken: string) =>
+  nativeInvoke<AuthStatus>("cis_set_refresh_token", { input: { refreshToken } });
+
+export const exportAuthSession = (input: { verification: "biometric" | "password"; password?: string }) =>
+  nativeInvoke<string>("cis_export_auth_session", { input });

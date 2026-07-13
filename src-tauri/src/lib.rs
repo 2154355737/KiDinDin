@@ -5,8 +5,14 @@ use serde_json::Value;
 use std::{fs, path::PathBuf, sync::Mutex, time::{SystemTime, UNIX_EPOCH}};
 use tauri::{AppHandle, Manager, State};
 use uuid::Uuid;
+#[cfg(mobile)]
+use tauri_plugin_biometric::{AuthOptions, BiometricExt};
 
 const DEFAULT_TARGET: &str = "https://cis.whng.com.cn";
+const AUTH_REFRESH_PATH: &str = "/api/auth/oauth/token";
+const AUTH_REFRESH_BASIC_AUTH: &str = "Basic cGlnOnBpZw==";
+const AUTH_TENANT_ID: &str = "1";
+const EXPORT_SHARED_PASSWORD: &str = "ahk12378dx";
 const DINGTALK_REFERER: &str = "https://2021001142645745.eco.dingtalkapps.com/index.html";
 const DINGTALK_APP_ID: &str = "com.alibaba.android.rimet";
 const DINGTALK_APP_VERSION: &str = "8.3.35";
@@ -17,6 +23,12 @@ const FILE_UPLOAD_USER_AGENT: &str = "MiniFileUploaderAliApp(DingTalk/8.3.35) co
 #[derive(Clone, Default, Deserialize, Serialize)]
 struct CisSession {
     access_token: String,
+    refresh_token: Option<String>,
+    token_type: Option<String>,
+    scope: Option<String>,
+    license: Option<String>,
+    active: Option<bool>,
+    user_info: Option<Value>,
     cookie: String,
     sign: String,
     target: String,
@@ -65,12 +77,26 @@ struct SessionInput {
     target: Option<String>,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RefreshTokenInput {
+    refresh_token: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExportAuthInput {
+    verification: String,
+    password: Option<String>,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SessionStatus {
     authenticated: bool,
     employee_number: Option<String>,
     expires_at: Option<i64>,
+    refresh_available: bool,
     username: Option<String>,
 }
 
@@ -93,6 +119,20 @@ struct DownloadedFile {
     name: String,
 }
 
+#[derive(Serialize)]
+struct ExportedAuthSession {
+    access_token: String,
+    token_type: String,
+    refresh_token: Option<String>,
+    expires_in: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    scope: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    license: Option<String>,
+    active: bool,
+    user_info: Value,
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct UploadFile {
@@ -105,17 +145,43 @@ fn non_empty(value: Option<&Value>) -> Option<String> {
     value.and_then(Value::as_str).map(str::trim).filter(|value| !value.is_empty()).map(String::from)
 }
 
+fn first_text(root: &Value, payload: &Value, keys: &[&str]) -> Option<String> {
+    keys.iter().find_map(|key| non_empty(root.get(*key)).or_else(|| non_empty(payload.get(*key))))
+}
+
+fn numeric_value(value: Option<&Value>) -> Option<i64> {
+    value.and_then(|value| value.as_i64()
+        .or_else(|| value.as_u64().and_then(|value| i64::try_from(value).ok()))
+        .or_else(|| value.as_str().and_then(|value| value.trim().parse::<i64>().ok())))
+}
+
+fn expiration_timestamp(root: &Value, payload: &Value) -> Option<i64> {
+    let expires_at = ["expiresAt", "expires_at"].iter()
+        .find_map(|key| numeric_value(root.get(*key)).or_else(|| numeric_value(payload.get(*key))));
+    if let Some(value) = expires_at.filter(|value| *value > 0) {
+        return Some(if value < 2_000_000_000 { value * 1000 } else { value });
+    }
+    let expires_in = ["expires_in", "expiresIn"].iter()
+        .find_map(|key| numeric_value(root.get(*key)).or_else(|| numeric_value(payload.get(*key))));
+    expires_in.filter(|value| *value > 0).map(|value| current_timestamp_millis() + value * 1000)
+}
+
 fn session_status(session: Option<&CisSession>) -> SessionStatus {
     SessionStatus {
         authenticated: session.is_some_and(|value| !value.access_token.is_empty()),
         employee_number: session.and_then(|value| value.employee_number.clone()),
         expires_at: session.and_then(|value| value.expires_at),
+        refresh_available: session.and_then(|value| value.refresh_token.as_ref()).is_some_and(|value| !value.is_empty()),
         username: session.and_then(|value| value.username.clone()),
     }
 }
 
 fn current_timestamp() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
+}
+
+fn current_timestamp_millis() -> i64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as i64
 }
 
 fn auth_history_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -146,10 +212,24 @@ fn token_hint(token: &str) -> String {
     format!("{}…{}", start, end)
 }
 
-fn remember_auth_session(app: &AppHandle, session: &CisSession) -> Result<(), String> {
+fn same_auth_session(left: &CisSession, right: &CisSession) -> bool {
+    let left_account = left.employee_number.as_ref().or(left.username.as_ref());
+    let right_account = right.employee_number.as_ref().or(right.username.as_ref());
+    match (left_account, right_account) {
+        (Some(left_account), Some(right_account)) => left_account == right_account,
+        _ => left.access_token == right.access_token
+            || left.refresh_token.as_ref().is_some_and(|token| right.refresh_token.as_ref().is_some_and(|other| token == other)),
+    }
+}
+
+fn remember_auth_session(app: &AppHandle, session: &CisSession, previous_session: Option<&CisSession>) -> Result<(), String> {
     let key = account_key(session);
     let mut history = read_auth_history(app)?;
-    if let Some(entry) = history.iter_mut().find(|entry| account_key(&entry.session) == key) {
+    if let Some(entry) = history.iter_mut().find(|entry| {
+        account_key(&entry.session) == key
+            || same_auth_session(&entry.session, session)
+            || previous_session.is_some_and(|previous| same_auth_session(&entry.session, previous))
+    }) {
         entry.session = session.clone();
         entry.last_used_at = current_timestamp();
     } else {
@@ -177,7 +257,8 @@ fn parse_session(input: SessionInput) -> Result<CisSession, String> {
     }
 
     let parsed = serde_json::from_str::<Value>(raw).ok();
-    let payload = parsed.as_ref().and_then(|value| value.get("data")).unwrap_or_else(|| parsed.as_ref().unwrap_or(&Value::Null));
+    let root = parsed.as_ref().unwrap_or(&Value::Null);
+    let payload = root.get("data").unwrap_or(root);
     let token = if let Some(value) = parsed.as_ref() {
         non_empty(value.get("access_token"))
             .or_else(|| non_empty(value.get("accessToken")))
@@ -202,13 +283,45 @@ fn parse_session(input: SessionInput) -> Result<CisSession, String> {
 
     Ok(CisSession {
         access_token: token,
+        refresh_token: first_text(root, payload, &["refresh_token", "refreshToken"]),
+        token_type: first_text(root, payload, &["token_type", "tokenType"]),
+        scope: first_text(root, payload, &["scope"]),
+        license: first_text(root, payload, &["license"]),
+        active: root.get("active").and_then(Value::as_bool).or_else(|| payload.get("active").and_then(Value::as_bool)),
+        user_info: payload.get("user_info").or_else(|| payload.get("userInfo")).cloned(),
         cookie: input.cookie.or_else(|| non_empty(payload.get("cookie"))).unwrap_or_default().trim().to_string(),
         sign: input.sign.or_else(|| non_empty(payload.get("sign"))).unwrap_or_default().trim().to_string(),
         target,
         username: non_empty(user_info.and_then(|value| value.get("username"))).or_else(|| non_empty(payload.get("username"))),
         employee_number: non_empty(user_info.and_then(|value| value.get("employeeNumber"))).or_else(|| non_empty(payload.get("employeeNumber"))),
-        expires_at: payload.get("expiresAt").and_then(Value::as_i64),
+        expires_at: expiration_timestamp(root, payload),
     })
+}
+
+fn refreshed_session(current: &CisSession, response: &Value) -> Result<CisSession, String> {
+    if numeric_value(response.get("code")).is_some_and(|code| code != 0) {
+        return Err(non_empty(response.get("msg")).unwrap_or_else(|| "Token 续期被服务端拒绝".into()));
+    }
+    let payload = response.get("data").unwrap_or(response);
+    let access_token = first_text(response, payload, &["access_token", "accessToken", "token", "authorization"])
+        .map(|value| value.trim_start_matches("Bearer ").trim_start_matches("bearer ").trim().to_string())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "续期响应缺少 access_token".to_string())?;
+    let user_info = payload.get("user_info").or_else(|| payload.get("userInfo"));
+    let mut next = current.clone();
+    next.access_token = access_token;
+    next.refresh_token = first_text(response, payload, &["refresh_token", "refreshToken"]).or_else(|| current.refresh_token.clone());
+    next.token_type = first_text(response, payload, &["token_type", "tokenType"]).or_else(|| current.token_type.clone());
+    next.scope = first_text(response, payload, &["scope"]).or_else(|| current.scope.clone());
+    next.license = first_text(response, payload, &["license"]).or_else(|| current.license.clone());
+    next.active = response.get("active").and_then(Value::as_bool).or_else(|| payload.get("active").and_then(Value::as_bool)).or(current.active);
+    next.user_info = payload.get("user_info").or_else(|| payload.get("userInfo")).cloned().or_else(|| current.user_info.clone());
+    next.expires_at = expiration_timestamp(response, payload);
+    if let Some(cookie) = first_text(response, payload, &["cookie"]) { next.cookie = cookie; }
+    if let Some(sign) = first_text(response, payload, &["sign"]) { next.sign = sign; }
+    next.username = non_empty(user_info.and_then(|value| value.get("username"))).or_else(|| non_empty(payload.get("username"))).or(next.username);
+    next.employee_number = non_empty(user_info.and_then(|value| value.get("employeeNumber"))).or_else(|| non_empty(payload.get("employeeNumber"))).or(next.employee_number);
+    Ok(next)
 }
 
 fn request_url(session: &CisSession, path: &str) -> String {
@@ -250,7 +363,7 @@ fn cis_configure_session(input: SessionInput, app: AppHandle, state: State<'_, C
     let session = parse_session(input)?;
     let status = session_status(Some(&session));
     *state.session.lock().map_err(|_| "会话锁定失败")? = Some(session.clone());
-    let _ = remember_auth_session(&app, &session);
+    let _ = remember_auth_session(&app, &session, None);
     Ok(status)
 }
 
@@ -277,6 +390,96 @@ fn cis_restore_auth_history(id: String, app: AppHandle, state: State<'_, CisStat
     write_auth_history(&app, &history)?;
     let status = session_status(Some(&session));
     *state.session.lock().map_err(|_| "会话锁定失败")? = Some(session);
+    Ok(status)
+}
+
+#[tauri::command]
+fn cis_set_refresh_token(input: RefreshTokenInput, app: AppHandle, state: State<'_, CisState>) -> Result<SessionStatus, String> {
+    let refresh_token = input.refresh_token.trim();
+    if refresh_token.is_empty() { return Err("请粘贴 refresh_token".into()); }
+    let current = state.session.lock().map_err(|_| "会话锁定失败")?.clone().ok_or_else(|| "当前没有可更新的登录会话".to_string())?;
+    let mut next = current.clone();
+    next.refresh_token = Some(refresh_token.to_string());
+    let status = session_status(Some(&next));
+    *state.session.lock().map_err(|_| "会话锁定失败")? = Some(next.clone());
+    let _ = remember_auth_session(&app, &next, Some(&current));
+    Ok(status)
+}
+
+fn exported_auth_session(session: &CisSession) -> ExportedAuthSession {
+    let expires_in = session.expires_at.map(|expires_at| ((expires_at - current_timestamp_millis()) / 1000).max(0));
+    let user_info = session.user_info.clone().unwrap_or_else(|| {
+        serde_json::json!({
+            "username": session.username,
+            "employeeNumber": session.employee_number,
+        })
+    });
+    ExportedAuthSession {
+        access_token: session.access_token.clone(),
+        token_type: session.token_type.clone().unwrap_or_else(|| "bearer".into()),
+        refresh_token: session.refresh_token.clone(),
+        expires_in,
+        scope: session.scope.clone(),
+        license: session.license.clone(),
+        active: session.active.unwrap_or(true),
+        user_info,
+    }
+}
+
+#[tauri::command]
+fn cis_export_auth_session(input: ExportAuthInput, app: AppHandle, state: State<'_, CisState>) -> Result<String, String> {
+    match input.verification.as_str() {
+        "password" => {
+            if input.password.as_deref() != Some(EXPORT_SHARED_PASSWORD) {
+                return Err("公用密码不正确".into());
+            }
+        }
+        "biometric" => {
+            #[cfg(mobile)]
+            app.biometric().authenticate(
+                "验证指纹后导出当前登录 JSON".into(),
+                AuthOptions {
+                    allow_device_credential: false,
+                    cancel_title: Some("取消".into()),
+                    title: Some("验证身份".into()),
+                    subtitle: Some("导出当前登录凭据".into()),
+                    confirmation_required: Some(false),
+                    ..Default::default()
+                },
+            ).map_err(|error| format!("生物识别未通过：{error}"))?;
+            #[cfg(not(mobile))]
+            {
+                let _ = app;
+                return Err("仅支持在 Android 应用内进行指纹验证".into());
+            }
+        }
+        _ => return Err("不支持的导出验证方式".into()),
+    }
+
+    let session = state.session.lock().map_err(|_| "会话锁定失败")?.clone().ok_or_else(|| "当前没有可导出的登录会话".to_string())?;
+    serde_json::to_string_pretty(&exported_auth_session(&session)).map_err(|error| format!("导出登录 JSON 失败：{error}"))
+}
+
+#[tauri::command]
+async fn cis_refresh_auth_session(app: AppHandle, state: State<'_, CisState>) -> Result<SessionStatus, String> {
+    let current = state.session.lock().map_err(|_| "会话锁定失败")?.clone().ok_or_else(|| "当前没有可续期的登录会话".to_string())?;
+    let refresh_token = current.refresh_token.clone().filter(|value| !value.trim().is_empty()).ok_or_else(|| "当前会话没有 refresh_token，请重新粘贴完整登录响应 JSON".to_string())?;
+    let timestamp = current_timestamp_millis().to_string();
+    let mut request = state.client.post(request_url(&current, AUTH_REFRESH_PATH))
+        .query(&[("grant_type", "refresh_token"), ("refresh_token", refresh_token.as_str())])
+        .header(header::AUTHORIZATION, AUTH_REFRESH_BASIC_AUTH)
+        .header("tenant-id", AUTH_TENANT_ID)
+        .header("x-request-id", Uuid::new_v4().to_string())
+        .header("ts", timestamp)
+        .header("agent", "DDDigitalCis")
+        .header(header::USER_AGENT, MOBILE_USER_AGENT)
+        .header(header::ACCEPT, "application/json, text/plain, */*");
+    if !current.cookie.is_empty() { request = request.header(header::COOKIE, &current.cookie); }
+    let response = response_json(request.send().await.map_err(|error| format!("Token 续期网络失败：{error}"))?).await?;
+    let next = refreshed_session(&current, &response)?;
+    let status = session_status(Some(&next));
+    *state.session.lock().map_err(|_| "会话锁定失败")? = Some(next.clone());
+    let _ = remember_auth_session(&app, &next, Some(&current));
     Ok(status)
 }
 
@@ -347,8 +550,11 @@ async fn cis_upload_files(files: Vec<UploadFile>, biz_id: Option<String>, state:
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
+    let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init());
+    #[cfg(mobile)]
+    let builder = builder.plugin(tauri_plugin_biometric::init());
+    builder
         .manage(CisState::default())
         .invoke_handler(tauri::generate_handler![
             cis_auth_status,
@@ -356,6 +562,9 @@ pub fn run() {
             cis_clear_session,
             cis_auth_history,
             cis_restore_auth_history,
+            cis_set_refresh_token,
+            cis_refresh_auth_session,
+            cis_export_auth_session,
             device_identity_preview,
             cis_download_file,
             cis_request,

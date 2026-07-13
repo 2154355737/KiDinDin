@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronDown } from "lucide-react";
+import { onBackButtonPress } from "@tauri-apps/api/app";
 import { AppDrawer } from "./components/AppDrawer";
 import { PrimaryNav } from "./components/Navigation";
 import { HomePage } from "./pages/HomePage";
@@ -7,7 +8,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { StatsPage } from "./pages/StatsPage";
 import { SubmitPage } from "./pages/SubmitPage";
 import { ConfirmPage, ModePage, PreparePage, RecordsPage, RunningPage } from "./pages/WorkflowPages";
-import { configureAuthSession, fetchAuthHistory, fetchAuthStatus, logoutAuth, restoreAuthHistory, type AuthHistoryItem } from "./services/authApi";
+import { configureAuthSession, exportAuthSession, fetchAuthHistory, fetchAuthStatus, logoutAuth, refreshAuthSession, restoreAuthHistory, setAuthRefreshToken, type AuthHistoryItem } from "./services/authApi";
 import {
   closeSecurityCheckWorkOrder,
   createWorkOrderExchangeLog,
@@ -89,6 +90,10 @@ function toUiOrder(source: CisWorkOrder): WorkOrder {
 
 function messageOf(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isUnreachableExchangeLog(log: Record<string, unknown>) {
+  return String(log.exchangeType ?? "") === EXCHANGE_TYPE_UNREACHABLE || JSON.stringify(log).includes("到访不遇");
 }
 
 function FilterPicker({ label, value, allLabel, options, open, onToggle, onSelect }: {
@@ -204,11 +209,11 @@ export default function App() {
   useEffect(() => { localStorage.setItem(DEFAULT_OPERATOR_NAME_STORAGE_KEY, customOperatorName.trim() || "段鑫"); }, [customOperatorName]);
   useEffect(() => {
     if (!isNativeRuntime()) {
-      setAuth({ authenticated: false, employeeNumber: null, expiresAt: null, username: null });
+      setAuth({ authenticated: false, employeeNumber: null, expiresAt: null, refreshAvailable: false, username: null });
       setLoginError("当前是浏览器预览，原生登录不可用。请安装并打开 KiDinDin APK 后再粘贴凭据。");
       return;
     }
-    void fetchAuthStatus().then(setAuth).catch(() => setAuth({ authenticated: false, employeeNumber: null, expiresAt: null, username: null }));
+    void fetchAuthStatus().then(setAuth).catch(() => setAuth({ authenticated: false, employeeNumber: null, expiresAt: null, refreshAvailable: false, username: null }));
     void fetchAuthHistory().then(setAuthHistory).catch(() => setAuthHistory([]));
   }, []);
   useEffect(() => { void loadOrders(); }, [loadOrders]);
@@ -261,6 +266,17 @@ export default function App() {
   };
 
   const setOrderStatus = (id: string, status: OrderStatus, backendStatusCode?: string) => setOrders((current) => current.map((order) => order.id === id ? { ...order, backendStatusCode: backendStatusCode ?? order.backendStatusCode, status } : order));
+  const hasUnreachableExchangeLog = async (order: WorkOrder) => {
+    const logs = await fetchWorkOrderExchangeLogs(order.woHeaderId);
+    return logs.some((log) => isUnreachableExchangeLog(log));
+  };
+  const waitForUnreachableExchangeLog = async (order: WorkOrder) => {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      if (await hasUnreachableExchangeLog(order)) return;
+      if (attempt < 2) await wait(700);
+    }
+    throw new Error("工单已关闭，但未查询到“到访不遇”流转日志，已加入待补发队列");
+  };
   const toggleOrder = (id: string) => setSelected((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
   const toggleAllPendingOrders = () => setSelected((current) => {
     const visibleIds = pendingSubmitOrders.map((order) => order.id);
@@ -386,6 +402,8 @@ export default function App() {
           woHeaderId: order.woHeaderId,
           woNumber: order.woNumber,
         });
+        setRunMessage(`正在核验 ${order.woNumber} 的流转日志…`);
+        await waitForUnreachableExchangeLog(order);
         setOrderStatus(order.id, "已结束", "60");
         setSelected((current) => current.filter((id) => id !== order.id));
       } catch (error) {
@@ -397,26 +415,103 @@ export default function App() {
   };
 
   const retryLog = async (id: string) => {
-    const order = orders.find((item) => item.id === id); if (!order) return;
+    const order = orders.find((item) => item.id === id);
+    if (!order) return { ok: false, message: "未找到该工单" };
+    if (order.backendStatusCode !== "60" && order.status !== "日志失败" && order.status !== "已结束") {
+      return { ok: false, message: "该工单尚未关闭，不能补发流转日志" };
+    }
     try {
+      if (await hasUnreachableExchangeLog(order)) {
+        setOrderStatus(id, "已结束", "60");
+        return { ok: false, message: "已查询到“到访不遇”流转日志，无需重复补发" };
+      }
       await createWorkOrderExchangeLog({ exchangeType: EXCHANGE_TYPE_UNREACHABLE, params: { closeReason: reason, remark }, userName: operatorName.trim() || "段鑫", woHeaderId: order.woHeaderId, woNumber: order.woNumber });
+      await waitForUnreachableExchangeLog(order);
       setOrderStatus(id, "已结束", "60");
-    } catch (error) { setLoadError(`补发日志失败：${messageOf(error)}`); }
+      return { ok: true, message: "流转日志已补发并完成核验" };
+    } catch (error) {
+      const message = `补发日志失败：${messageOf(error)}`;
+      setOrderStatus(id, "日志失败", "60");
+      setLoadError(message);
+      return { ok: false, message };
+    }
   };
+
+  const refreshSession = async () => {
+    const status = await refreshAuthSession();
+    setAuth(status);
+    return status;
+  };
+
+  const saveRefreshToken = async (refreshToken: string) => {
+    const status = await setAuthRefreshToken(refreshToken);
+    setAuth(status);
+    return status;
+  };
+
+  const exportSession = (input: { verification: "biometric" | "password"; password?: string }) => exportAuthSession(input);
+
+  const handleAndroidBack = useCallback(() => {
+    const pageBackEvent = new Event("kidindin:back", { cancelable: true });
+    window.dispatchEvent(pageBackEvent);
+    if (pageBackEvent.defaultPrevented) return;
+
+    if (drawer) { setDrawer(null); return; }
+    if (filterOpen) { setOpenFilterPicker(null); setFilterOpen(false); return; }
+    if (loadError) { setLoadError(null); return; }
+
+    switch (screen) {
+      case "records":
+        setScreen("mode");
+        return;
+      case "confirm":
+        setScreen("prepare");
+        return;
+      case "prepare":
+        setScreen("select");
+        return;
+      case "select":
+        setScreen("mode");
+        return;
+      case "mode":
+        setScreen("orders");
+        setMainTab("home");
+        return;
+      case "running":
+        if (!running) setScreen("records");
+        return;
+      case "orders":
+        if (mainTab !== "home") setMainTab("home");
+        return;
+    }
+  }, [drawer, filterOpen, loadError, mainTab, running, screen]);
+
+  useEffect(() => {
+    if (!isNativeRuntime()) return;
+    let cancelled = false;
+    let listener: { unregister: () => Promise<void> } | undefined;
+    void onBackButtonPress(handleAndroidBack)
+      .then((dispose) => {
+        if (cancelled) void dispose.unregister();
+        else listener = dispose;
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; void listener?.unregister(); };
+  }, [handleAndroidBack]);
 
   if (!loggedIn) return <div className={`app-shell theme-${appliedTheme}`}><main className="phone-frame"><LoginPage onLogin={login} history={authHistory} error={loginError} submitting={loggingIn} onRestoreHistory={loginWithHistory} /></main></div>;
 
   return <div className={`app-shell theme-${appliedTheme}`}><main className="phone-frame">
     {loadError ? <p className="network-error">{loadError}<button onClick={() => void loadOrders()}>重试</button></p> : null}
     {screen === "orders" && mainTab === "home" && <HomePage orders={filteredOrders} query={query} date={selectedDate} onQueryChange={setQuery} onDateChange={setSelectedDate} onOpenSettings={() => setDrawer("settings")} onFilter={() => setFilterOpen(true)} onDetail={(order) => { setActiveOrderId(order.id); setDrawer("detail"); }} />}
-    {screen === "orders" && mainTab === "stats" && <StatsPage orders={orders} date={selectedDate} onDateChange={setSelectedDate} onRetry={retryLog} />}
+    {screen === "orders" && mainTab === "stats" && <StatsPage orders={orders} date={selectedDate} onDateChange={setSelectedDate} onRetry={(id) => void retryLog(id)} />}
     {screen === "mode" && <ModePage mode={submitMode} intervalMinSeconds={submitIntervalMinSeconds} intervalMaxSeconds={submitIntervalMaxSeconds} onModeChange={(mode) => { setSubmitMode(mode); setHistoryMode(mode === "historical" ? "auto" : "manual"); }} onIntervalMinChange={(value) => { setSubmitIntervalMinSeconds(value); setSubmitIntervalMaxSeconds((current) => Math.max(current, value)); }} onIntervalMaxChange={(value) => { setSubmitIntervalMaxSeconds(value); setSubmitIntervalMinSeconds((current) => Math.min(current, value)); }} onBack={() => { setScreen("orders"); setMainTab("home"); }} onNext={() => setScreen("select")} />}
     {screen === "select" && <SubmitPage orders={pendingSubmitOrders} selected={pendingSelectedIds} mode={submitMode} date={selectedDate} onDateChange={setSelectedDate} onBack={() => setScreen("mode")} onFilter={() => setFilterOpen(true)} onToggle={toggleOrder} onToggleAll={toggleAllPendingOrders} onDetail={(order) => { setActiveOrderId(order.id); setDrawer("detail"); }} onPrepare={() => { if (selectedOrders.length) { setActiveOrderId(selectedOrders[0].id); setHistoryMode(submitMode === "historical" ? "auto" : "manual"); setScreen("prepare"); } }} />}
     {screen === "prepare" && activeOrder && <PreparePage orders={selectedOrders} activeOrder={activeOrder} historyFileName={activeHistoryFile?.name ?? ""} historyMode={historyMode} historyPhotos={historyPhotos} historyPhotoError={historyPhotoError} historyPhotoLoading={historyPhotoLoading} libraryFileName={libraryFile?.name ?? ""} date={selectedDate} onDateChange={setSelectedDate} onBack={() => setScreen("select")} onSelectOrder={setActiveOrderId} onPickHistoryFile={(file) => { setHistoryMode("manual"); setHistoryFiles((current) => { const next = { ...current }; if (file) next[activeOrder.id] = file; else delete next[activeOrder.id]; return next; }); }} onHistoryModeChange={setHistoryMode} onFindHistoricalPhotos={() => void findHistoricalPhotos()} onSelectHistoricalPhoto={(photo) => { setHistoryMode("auto"); setHistoryFiles((current) => ({ ...current, [activeOrder.id]: photo.file })); }} onPickLibraryFile={setLibraryFile} onNext={() => { if (!libraryFile || selectedOrders.some((order) => !historyFiles[order.id])) { setLoadError("请为每个工单选择一张历史照片，并选择本机补图"); return; } setScreen("confirm"); }} />}
     {screen === "confirm" && <ConfirmPage orders={selectedOrders} historyFiles={historyFiles} libraryFile={libraryFile} reason={reason} remark={remark} operatorName={operatorName} operatorLocked={false} date={selectedDate} onDateChange={setSelectedDate} onBack={() => setScreen("prepare")} onReasonChange={setReason} onRemarkChange={setRemark} onOperatorNameChange={setCustomOperatorName} onStart={() => void runBatch()} />}
     {screen === "running" && <RunningPage total={batchOrders.length || selectedOrders.length} paused={paused} date={selectedDate} onDateChange={setSelectedDate} onBack={() => undefined} onTogglePause={() => setPaused((value) => !value)} onFinish={() => setScreen("records")} current={currentIndex} message={runMessage} running={running} />}
     {screen === "records" && <RecordsPage orders={batchOrders} date={selectedDate} onDateChange={setSelectedDate} onBack={() => setScreen("mode")} onRetry={(id) => void retryLog(id)} />}
-    {drawer && activeOrder && <AppDrawer type={drawer} order={activeOrder} detail={detail} detailAjInfo={detailAjInfo} detailLoading={detailLoading} detailError={detailError} theme={theme} libraryPhotos={[]} defaultOperatorName={customOperatorName} setDefaultOperatorName={setCustomOperatorName} setTheme={setTheme} onClose={() => setDrawer(null)} onLogout={() => { void logoutAuth().then(setAuth); setDrawer(null); setScreen("orders"); }} />}
+    {drawer && activeOrder && <AppDrawer type={drawer} order={activeOrder} detail={detail} detailAjInfo={detailAjInfo} detailLoading={detailLoading} detailError={detailError} theme={theme} auth={auth!} libraryPhotos={[]} defaultOperatorName={customOperatorName} setDefaultOperatorName={setCustomOperatorName} setTheme={setTheme} onRetryLog={retryLog} onRefreshSession={refreshSession} onSaveRefreshToken={saveRefreshToken} onExportSession={exportSession} onClose={() => setDrawer(null)} onLogout={() => { void logoutAuth().then(setAuth); setDrawer(null); setScreen("orders"); }} />}
     {filterOpen && <div className="filter-overlay" onClick={() => { setOpenFilterPicker(null); setFilterOpen(false); }}><section className="filter-panel" onClick={(event) => event.stopPropagation()}><h2>筛选工单</h2><p>关键词、楼栋、单元和工单状态会叠加筛选；楼栋和单元选项来自当前日期实际加载的工单。</p><FilterPicker label="楼栋" value={buildingFilter} allLabel="全部楼栋" options={buildingOptions} open={openFilterPicker === "building"} onToggle={() => setOpenFilterPicker((current) => current === "building" ? null : "building")} onSelect={(value) => { setBuildingFilter(value); setUnitFilter("all"); setOpenFilterPicker(null); }} /><FilterPicker label="单元" value={unitFilter} allLabel="全部单元" options={unitOptions} open={openFilterPicker === "unit"} onToggle={() => setOpenFilterPicker((current) => current === "unit" ? null : "unit")} onSelect={(value) => { setUnitFilter(value); setOpenFilterPicker(null); }} /><div className="status-filter-options">{workOrderStatusOptions.map((option) => <button key={option.value} className={statusFilter === option.value ? "active" : ""} onClick={() => setStatusFilter(option.value)}>{option.label}</button>)}</div><button onClick={() => { setOpenFilterPicker(null); setFilterOpen(false); }}>完成（{filteredOrders.length} 条）</button></section></div>}
     {loadingOrders ? <div className="loading-mask">正在加载工单…</div> : null}
     {screen === "orders" && <PrimaryNav active={mainTab} onChange={(tab) => { setMainTab(tab); setScreen(tab === "submit" ? "mode" : "orders"); }} />}

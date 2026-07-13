@@ -2,6 +2,7 @@ export type AuthStatus = {
   authenticated: boolean;
   employeeNumber: string | null;
   expiresAt: number | null;
+  refreshAvailable: boolean;
   username: string | null;
 };
 
