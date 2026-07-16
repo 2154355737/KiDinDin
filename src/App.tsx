@@ -1,14 +1,28 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { onBackButtonPress } from "@tauri-apps/api/app";
 import { AppDrawer } from "./components/AppDrawer";
 import { PrimaryNav } from "./components/Navigation";
+import { SessionExpiryNotice } from "./components/SessionExpiryNotice";
 import { HomePage } from "./pages/HomePage";
+import { LocalWorkOrdersPage } from "./pages/LocalWorkOrdersPage";
 import { LoginPage } from "./pages/LoginPage";
+import { MorePage } from "./pages/MorePage";
 import { StatsPage } from "./pages/StatsPage";
 import { SubmitPage } from "./pages/SubmitPage";
 import { ConfirmPage, ModePage, PreparePage, RecordsPage, RunningPage } from "./pages/WorkflowPages";
 import { configureAuthSession, exportAuthSession, fetchAuthHistory, fetchAuthStatus, logoutAuth, refreshAuthSession, restoreAuthHistory, setAuthRefreshToken, type AuthHistoryItem } from "./services/authApi";
+import {
+  clearLocalWorkOrderMeta,
+  deleteLocalWorkOrderMeta,
+  exportLocalWorkOrderMeta,
+  importLocalWorkOrderMeta,
+  listLocalWorkOrderMeta,
+  makeLocalWorkOrderKey,
+  saveLocalWorkOrderMeta,
+  type LocalWorkOrderMeta,
+  type LocalWorkOrderSnapshot,
+} from "./services/localWorkOrderStore";
 import {
   closeSecurityCheckWorkOrder,
   createWorkOrderExchangeLog,
@@ -30,6 +44,42 @@ import { getWorkOrderStatus, matchesWorkOrderStatus, workOrderStatusOptions, typ
 const CLOSE_REASON_UNREACHABLE = "11";
 const EXCHANGE_TYPE_UNREACHABLE = "80";
 const DEFAULT_OPERATOR_NAME_STORAGE_KEY = "kidindin.default-operator-name";
+const AUTO_LOGIN_HISTORY_STORAGE_KEY = "kidindin.auto-login-history-id";
+const AUTO_LOGIN_DISABLED = "disabled";
+const TOKEN_EXPIRY_WARNING_MS = 30 * 60_000;
+
+function normalizeExpiryTimestamp(expiresAt: number | null | undefined) {
+  if (!expiresAt || !Number.isFinite(expiresAt)) return null;
+  return expiresAt < 2_000_000_000 ? expiresAt * 1_000 : expiresAt;
+}
+
+function unauthenticatedStatus(): AuthStatus {
+  return { authenticated: false, employeeNumber: null, expiresAt: null, refreshAvailable: false, username: null };
+}
+
+function localAccountKeyFor(status: AuthStatus, historyId?: string | null) {
+  const employeeNumber = status.employeeNumber?.trim();
+  if (employeeNumber) return `employee:${employeeNumber}`;
+  const username = status.username?.trim();
+  if (username) return `username:${username}`;
+  return historyId?.trim() ? `history:${historyId.trim()}` : null;
+}
+
+function tokenHintFromInput(tokenText: string) {
+  const raw = tokenText.trim();
+  let token = raw;
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const payload = parsed.data && typeof parsed.data === "object" ? parsed.data as Record<string, unknown> : parsed;
+    const value = [parsed.access_token, parsed.accessToken, parsed.token, parsed.authorization, payload.access_token, payload.accessToken, payload.token, payload.authorization]
+      .find((item) => typeof item === "string" && item.trim()) as string | undefined;
+    if (value) token = value;
+  } catch {
+    // A plain Bearer token is also a supported login input.
+  }
+  token = token.replace(/^Bearer\s+/i, "").trim();
+  return token ? `${token.slice(0, 6)}…${token.slice(-4)}` : "";
+}
 
 type HistoryPhotoCandidate = {
   file: File;
@@ -43,6 +93,72 @@ type HistoryPhotoCacheEntry = {
   error: string | null;
   photos: HistoryPhotoCandidate[];
 };
+
+type WorkOrderSortField = "original" | "number" | "resident" | "location" | "time" | "status";
+type SortDirection = "asc" | "desc";
+
+const workOrderSortOptions: Array<{ label: string; value: WorkOrderSortField }> = [
+  { label: "默认", value: "original" },
+  { label: "工单号", value: "number" },
+  { label: "住户", value: "resident" },
+  { label: "楼栋单元", value: "location" },
+  { label: "计划时间", value: "time" },
+  { label: "状态", value: "status" },
+];
+
+const naturalCollator = new Intl.Collator("zh-CN", { numeric: true, sensitivity: "base" });
+
+function statusSortRank(statusCode: string) {
+  switch (statusCode) {
+    case "20": return 0;
+    case "30": return 1;
+    case "40":
+    case "50": return 2;
+    case "60": return 3;
+    default: return 4;
+  }
+}
+
+function compareWorkOrders(left: WorkOrder, right: WorkOrder, field: Exclude<WorkOrderSortField, "original">) {
+  switch (field) {
+    case "number":
+      return naturalCollator.compare(left.woNumber || left.id, right.woNumber || right.id);
+    case "resident":
+      return naturalCollator.compare(left.resident, right.resident);
+    case "location": {
+      const buildingComparison = naturalCollator.compare(left.building, right.building);
+      if (buildingComparison !== 0) return buildingComparison;
+      const unitNumberComparison = naturalCollator.compare(left.unitNumber, right.unitNumber);
+      return unitNumberComparison !== 0 ? unitNumberComparison : naturalCollator.compare(left.unit, right.unit);
+    }
+    case "time":
+      return naturalCollator.compare(left.time, right.time);
+    case "status":
+      return statusSortRank(left.backendStatusCode) - statusSortRank(right.backendStatusCode);
+  }
+}
+
+function isMissingPlanTime(value: string) {
+  const normalized = value.trim();
+  return !normalized || normalized === "待安排";
+}
+
+function sortWorkOrders(items: WorkOrder[], field: WorkOrderSortField, direction: SortDirection) {
+  if (field === "original") return items;
+  const directionFactor = direction === "asc" ? 1 : -1;
+  return items
+    .map((order, index) => ({ index, order }))
+    .sort((left, right) => {
+      if (field === "time") {
+        const leftMissing = isMissingPlanTime(left.order.time);
+        const rightMissing = isMissingPlanTime(right.order.time);
+        if (leftMissing !== rightMissing) return leftMissing ? 1 : -1;
+      }
+      const comparison = compareWorkOrders(left.order, right.order, field);
+      return comparison === 0 ? left.index - right.index : comparison * directionFactor;
+    })
+    .map(({ order }) => order);
+}
 
 function textField(value: unknown) {
   return typeof value === "string" || typeof value === "number" ? String(value).trim() : "";
@@ -88,6 +204,52 @@ function toUiOrder(source: CisWorkOrder): WorkOrder {
   };
 }
 
+function toLocalSnapshot(order: WorkOrder): LocalWorkOrderSnapshot {
+  return {
+    address: order.address,
+    backendStatusCode: order.backendStatusCode,
+    building: order.building,
+    resident: order.resident,
+    status: order.status,
+    time: order.time,
+    unit: order.unit,
+    unitNumber: order.unitNumber,
+    woNumber: order.woNumber,
+  };
+}
+
+function fromLocalMeta(item: LocalWorkOrderMeta): WorkOrder {
+  const snapshot = item.snapshot;
+  const status: OrderStatus = ["待处理", "处理中", "已完成", "已结束", "待提交", "关闭失败", "日志失败", "未知"].includes(snapshot.status)
+    ? snapshot.status as OrderStatus
+    : "未知";
+  return {
+    address: snapshot.address,
+    backendStatusCode: snapshot.backendStatusCode,
+    building: snapshot.building,
+    id: snapshot.woNumber || item.woHeaderId,
+    resident: snapshot.resident,
+    searchText: [snapshot.woNumber, snapshot.resident, snapshot.address, snapshot.building, snapshot.unitNumber, item.note].filter(Boolean).join(" ").toLowerCase(),
+    status,
+    time: snapshot.time,
+    unit: snapshot.unit,
+    unitNumber: snapshot.unitNumber,
+    woHeaderId: item.woHeaderId,
+    woNumber: snapshot.woNumber,
+  };
+}
+
+function downloadJsonFile(fileName: string, payload: string) {
+  const url = URL.createObjectURL(new Blob([payload], { type: "application/json;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+}
+
 function messageOf(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
@@ -113,6 +275,8 @@ export default function App() {
   const [authHistory, setAuthHistory] = useState<AuthHistoryItem[]>([]);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loggingIn, setLoggingIn] = useState(false);
+  const [sessionExpiryNow, setSessionExpiryNow] = useState(() => Date.now());
+  const [dismissedSessionExpiryKey, setDismissedSessionExpiryKey] = useState<string | null>(null);
   const [screen, setScreen] = useState<Screen>("orders");
   const [mainTab, setMainTab] = useState<MainTab>("home");
   const [theme, setTheme] = useState<Theme>("system");
@@ -121,12 +285,22 @@ export default function App() {
   const [statusFilter, setStatusFilter] = useState<WorkOrderStatusFilter>("all");
   const [buildingFilter, setBuildingFilter] = useState("all");
   const [unitFilter, setUnitFilter] = useState("all");
+  const [sortField, setSortField] = useState<WorkOrderSortField>("original");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [openFilterPicker, setOpenFilterPicker] = useState<"building" | "unit" | null>(null);
   const [selectedDate, setSelectedDate] = useState(today());
   const [orders, setOrders] = useState<WorkOrder[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [batchOrderIds, setBatchOrderIds] = useState<string[]>([]);
   const [activeOrderId, setActiveOrderId] = useState("");
+  const [localDetailOrder, setLocalDetailOrder] = useState<WorkOrder | null>(null);
+  const [localAccountKey, setLocalAccountKey] = useState<string | null>(null);
+  const [localWorkOrders, setLocalWorkOrders] = useState<LocalWorkOrderMeta[]>([]);
+  const [localDataBusy, setLocalDataBusy] = useState(false);
+  const [localDataMessage, setLocalDataMessage] = useState("");
+  const [localSavingOrderIds, setLocalSavingOrderIds] = useState<string[]>([]);
+  const localSaveLocks = useRef(new Set<string>());
+  const sessionRefreshPromise = useRef<Promise<AuthStatus> | null>(null);
   const [historyFiles, setHistoryFiles] = useState<Record<string, File>>({});
   const [historyMode, setHistoryMode] = useState<"manual" | "auto">("manual");
   const [submitMode, setSubmitMode] = useState<"manual" | "historical">("manual");
@@ -154,22 +328,37 @@ export default function App() {
   const [detailError, setDetailError] = useState<string | null>(null);
 
   const loggedIn = Boolean(auth?.authenticated);
+  const sessionExpiryAt = normalizeExpiryTimestamp(auth?.expiresAt);
+  const sessionExpiryKey = sessionExpiryAt === null
+    ? null
+    : `${localAccountKey ?? auth?.employeeNumber ?? auth?.username ?? "session"}:${sessionExpiryAt}`;
+  const sessionRemainingMs = sessionExpiryAt === null ? null : sessionExpiryAt - sessionExpiryNow;
+  const showSessionExpiryNotice = loggedIn
+    && sessionRemainingMs !== null
+    && sessionRemainingMs <= TOKEN_EXPIRY_WARNING_MS
+    && dismissedSessionExpiryKey !== sessionExpiryKey;
+  const displaySessionExpiryNotice = showSessionExpiryNotice && !drawer && !filterOpen;
   const appliedTheme = theme === "system" ? (systemDark ? "dark" : "light") : theme;
   const operatorName = customOperatorName.trim() || "段鑫";
-  const activeOrder = orders.find((order) => order.id === activeOrderId) ?? orders[0];
+  const localMetaById = useMemo(() => Object.fromEntries(localWorkOrders.map((item) => [item.woHeaderId, item])), [localWorkOrders]);
+  const activeOrder = localDetailOrder ?? orders.find((order) => order.id === activeOrderId) ?? orders[0];
   const activeHistoryFile = activeOrder ? historyFiles[activeOrder.id] ?? null : null;
-  const selectedOrders = useMemo(() => orders.filter((order) => selected.includes(order.id) && order.backendStatusCode === "20"), [orders, selected]);
+  const selectedOrders = useMemo(() => sortWorkOrders(orders.filter((order) => selected.includes(order.id) && order.backendStatusCode === "20"), sortField, sortDirection), [orders, selected, sortDirection, sortField]);
   const pendingSelectedIds = useMemo(() => selectedOrders.map((order) => order.id), [selectedOrders]);
-  const batchOrders = useMemo(() => orders.filter((order) => batchOrderIds.includes(order.id)), [batchOrderIds, orders]);
+  const batchOrders = useMemo(() => {
+    const orderById = new Map(orders.map((order) => [order.id, order]));
+    return batchOrderIds.flatMap((id) => orderById.get(id) ? [orderById.get(id)!] : []);
+  }, [batchOrderIds, orders]);
   const filteredOrders = useMemo(() => {
     const keyword = query.trim().toLowerCase();
-    return orders.filter((order) =>
+    const matchingOrders = orders.filter((order) =>
       (!keyword || order.searchText.includes(keyword)) &&
       matchesWorkOrderStatus(order.backendStatusCode, statusFilter) &&
       (buildingFilter === "all" || order.building === buildingFilter) &&
       (unitFilter === "all" || order.unitNumber === unitFilter)
     );
-  }, [buildingFilter, orders, query, statusFilter, unitFilter]);
+    return sortWorkOrders(matchingOrders, sortField, sortDirection);
+  }, [buildingFilter, orders, query, sortDirection, sortField, statusFilter, unitFilter]);
   const buildingOptions = useMemo(
     () => [...new Set(orders.map((order) => order.building).filter(Boolean))].sort((left, right) => left.localeCompare(right, "zh-CN")),
     [orders]
@@ -183,6 +372,28 @@ export default function App() {
   useEffect(() => {
     if (unitFilter !== "all" && !unitOptions.includes(unitFilter)) setUnitFilter("all");
   }, [unitFilter, unitOptions]);
+
+  useEffect(() => {
+    if (!loggedIn || sessionExpiryAt === null) return;
+    const updateSessionExpiryClock = () => setSessionExpiryNow(Date.now());
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") updateSessionExpiryClock();
+    };
+    updateSessionExpiryClock();
+    const timer = window.setInterval(updateSessionExpiryClock, 60_000);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", updateSessionExpiryClock);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", updateSessionExpiryClock);
+    };
+  }, [loggedIn, sessionExpiryAt]);
+
+  useEffect(() => {
+    setSessionExpiryNow(Date.now());
+    if (!loggedIn) setDismissedSessionExpiryKey(null);
+  }, [loggedIn, sessionExpiryAt]);
 
   const loadOrders = useCallback(async () => {
     if (!loggedIn) return;
@@ -206,16 +417,91 @@ export default function App() {
     media.addEventListener("change", syncTheme);
     return () => media.removeEventListener("change", syncTheme);
   }, []);
+  useEffect(() => {
+    const root = document.documentElement;
+    const themeColor = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+    root.dataset.theme = appliedTheme;
+    root.style.colorScheme = appliedTheme;
+    document.body.classList.toggle("theme-dark", appliedTheme === "dark");
+    themeColor?.setAttribute("content", appliedTheme === "dark" ? "#000000" : "#f7f9fc");
+  }, [appliedTheme]);
   useEffect(() => { localStorage.setItem(DEFAULT_OPERATOR_NAME_STORAGE_KEY, customOperatorName.trim() || "段鑫"); }, [customOperatorName]);
   useEffect(() => {
+    let active = true;
     if (!isNativeRuntime()) {
-      setAuth({ authenticated: false, employeeNumber: null, expiresAt: null, refreshAvailable: false, username: null });
+      setAuth(unauthenticatedStatus());
       setLoginError("当前是浏览器预览，原生登录不可用。请安装并打开 KiDinDin APK 后再粘贴凭据。");
       return;
     }
-    void fetchAuthStatus().then(setAuth).catch(() => setAuth({ authenticated: false, employeeNumber: null, expiresAt: null, refreshAvailable: false, username: null }));
-    void fetchAuthHistory().then(setAuthHistory).catch(() => setAuthHistory([]));
+
+    const bootstrapAuth = async () => {
+      try {
+        const [current, history] = await Promise.all([fetchAuthStatus(), fetchAuthHistory()]);
+        if (!active) return;
+        setAuthHistory(history);
+
+        let next = current;
+        let restoredHistory = false;
+        const savedHistoryId = localStorage.getItem(AUTO_LOGIN_HISTORY_STORAGE_KEY);
+        let activeHistoryId = savedHistoryId && savedHistoryId !== AUTO_LOGIN_DISABLED && history.some((item) => item.id === savedHistoryId)
+          ? savedHistoryId
+          : undefined;
+        const autoLoginHistory = savedHistoryId === AUTO_LOGIN_DISABLED
+          ? undefined
+          : history.find((item) => item.id === savedHistoryId) ?? history[0];
+        if (!next.authenticated && autoLoginHistory) {
+          next = await restoreAuthHistory(autoLoginHistory.id);
+          localStorage.setItem(AUTO_LOGIN_HISTORY_STORAGE_KEY, autoLoginHistory.id);
+          activeHistoryId = autoLoginHistory.id;
+          restoredHistory = true;
+        }
+
+        const nextExpiryAt = normalizeExpiryTimestamp(next.expiresAt);
+        if (next.authenticated && nextExpiryAt !== null && nextExpiryAt <= Date.now()) {
+          if (!next.refreshAvailable) throw new Error("最近一次登录已过期，且没有可用的 refresh_token");
+          next = await refreshAuthSession();
+          restoredHistory = true;
+        }
+
+        if (!active) return;
+        if (next.authenticated) {
+          setScreen("orders");
+          setMainTab("home");
+          const accountKey = localAccountKeyFor(next, activeHistoryId ?? autoLoginHistory?.id ?? history[0]?.id);
+          setLocalAccountKey(accountKey);
+          if (!accountKey) setLocalDataMessage("当前登录缺少可识别的账号信息，本地工单功能已停用");
+        } else {
+          setLocalAccountKey(null);
+        }
+        setAuth(next);
+        if (restoredHistory) void fetchAuthHistory().then(setAuthHistory).catch(() => undefined);
+      } catch (error) {
+        if (!active) return;
+        setLocalAccountKey(null);
+        setAuth(unauthenticatedStatus());
+        setLoginError(`自动恢复登录失败：${messageOf(error)}`);
+      }
+    };
+
+    void bootstrapAuth();
+    return () => { active = false; };
   }, []);
+  useEffect(() => {
+    if (!loggedIn || !localAccountKey) {
+      setLocalWorkOrders([]);
+      setLocalDataBusy(false);
+      if (!loggedIn) setLocalDataMessage("");
+      else setLocalDataMessage("当前登录缺少可识别的账号信息，本地工单功能已停用");
+      return;
+    }
+    let active = true;
+    setLocalDataBusy(true);
+    void listLocalWorkOrderMeta(localAccountKey)
+      .then((items) => { if (active) setLocalWorkOrders(items); })
+      .catch((error) => { if (active) setLocalDataMessage(`读取本地工单失败：${messageOf(error)}`); })
+      .finally(() => { if (active) setLocalDataBusy(false); });
+    return () => { active = false; };
+  }, [localAccountKey, loggedIn]);
   useEffect(() => { void loadOrders(); }, [loadOrders]);
   useEffect(() => {
     const cached = historyPhotoCache[activeOrderId];
@@ -249,8 +535,23 @@ export default function App() {
     setLoggingIn(true); setLoginError(null);
     try {
       const status = await configureAuthSession(input);
+      localStorage.removeItem(AUTO_LOGIN_HISTORY_STORAGE_KEY);
+      const history = await fetchAuthHistory().catch(() => [] as AuthHistoryItem[]);
+      const tokenHint = tokenHintFromInput(input.tokenText);
+      const matchedHistory = history.find((item) =>
+        (status.employeeNumber && item.employeeNumber === status.employeeNumber)
+        || (status.username && item.username === status.username)
+        || (tokenHint && item.tokenHint === tokenHint)
+      ) ?? history.find((item) => !authHistory.some((previous) => previous.id === item.id)) ?? history[0];
+      const historyId = matchedHistory?.id;
+      const accountKey = localAccountKeyFor(status, historyId);
+      setLocalAccountKey(accountKey);
+      setLocalDataMessage(accountKey ? "" : "当前登录缺少可识别的账号信息，本地工单功能已停用");
       setAuth(status);
-      void fetchAuthHistory().then(setAuthHistory).catch(() => undefined);
+      if (history.length) {
+        setAuthHistory(history);
+        if (historyId) localStorage.setItem(AUTO_LOGIN_HISTORY_STORAGE_KEY, historyId);
+      }
     } catch (error) { setLoginError(messageOf(error)); }
     finally { setLoggingIn(false); }
   };
@@ -259,10 +560,122 @@ export default function App() {
     setLoggingIn(true); setLoginError(null);
     try {
       const status = await restoreAuthHistory(id);
+      localStorage.setItem(AUTO_LOGIN_HISTORY_STORAGE_KEY, id);
+      setLocalAccountKey(localAccountKeyFor(status, id));
       setAuth(status);
       void fetchAuthHistory().then(setAuthHistory).catch(() => undefined);
     } catch (error) { setLoginError(messageOf(error)); }
     finally { setLoggingIn(false); }
+  };
+
+  const persistLocalWorkOrder = async (order: WorkOrder, patch: Partial<Pick<LocalWorkOrderMeta, "appointmentAt" | "favorite" | "note" | "pinned">>) => {
+    const accountKey = localAccountKey;
+    if (!accountKey) throw new Error("当前登录缺少本地账号标识，无法保存工单资料");
+    if (localSaveLocks.current.has(order.woHeaderId)) throw new Error("这张工单的本地资料正在保存，请稍候");
+
+    localSaveLocks.current.add(order.woHeaderId);
+    setLocalSavingOrderIds((current) => current.includes(order.woHeaderId) ? current : [...current, order.woHeaderId]);
+    setLocalDataMessage("");
+    try {
+      const existing = localMetaById[order.woHeaderId];
+      const appointmentAt = patch.appointmentAt === "" ? null : patch.appointmentAt !== undefined ? patch.appointmentAt : existing?.appointmentAt ?? null;
+      const next: LocalWorkOrderMeta = {
+        accountKey,
+        appointmentAt,
+        favorite: patch.favorite ?? existing?.favorite ?? false,
+        key: makeLocalWorkOrderKey(accountKey, order.woHeaderId),
+        note: patch.note !== undefined ? patch.note.trim() : existing?.note ?? "",
+        pinned: patch.pinned ?? existing?.pinned ?? false,
+        snapshot: toLocalSnapshot(order),
+        sourceDate: existing?.sourceDate ?? selectedDate,
+        updatedAt: new Date().toISOString(),
+        woHeaderId: order.woHeaderId,
+      };
+      const hasLocalData = next.favorite || next.pinned || Boolean(next.note) || Boolean(next.appointmentAt);
+      if (!hasLocalData) {
+        if (existing) await deleteLocalWorkOrderMeta(existing.key);
+        setLocalWorkOrders((current) => current.filter((item) => item.woHeaderId !== order.woHeaderId));
+        return;
+      }
+      const saved = await saveLocalWorkOrderMeta(next);
+      setLocalWorkOrders((current) => [...current.filter((item) => item.woHeaderId !== saved.woHeaderId), saved]
+        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)));
+    } catch (error) {
+      setLocalDataMessage(`保存本地工单失败：${messageOf(error)}`);
+      throw error;
+    } finally {
+      localSaveLocks.current.delete(order.woHeaderId);
+      setLocalSavingOrderIds((current) => current.filter((id) => id !== order.woHeaderId));
+    }
+  };
+
+  const openCurrentOrderDetail = (order: WorkOrder) => {
+    setLocalDetailOrder(null);
+    setActiveOrderId(order.id);
+    setDrawer("detail");
+  };
+
+  const openLocalOrderDetail = (item: LocalWorkOrderMeta) => {
+    const order = fromLocalMeta(item);
+    setLocalDetailOrder(order);
+    setActiveOrderId(order.id);
+    setDrawer("detail");
+  };
+
+  const exportLocalData = async () => {
+    const accountKey = localAccountKey;
+    if (!accountKey) {
+      setLocalDataMessage("当前登录缺少本地账号标识，无法导出数据");
+      return;
+    }
+    setLocalDataBusy(true);
+    setLocalDataMessage("");
+    try {
+      const payload = await exportLocalWorkOrderMeta(accountKey);
+      downloadJsonFile(`kidindin-local-work-orders-${today()}.json`, payload);
+      setLocalDataMessage(`已导出 ${localWorkOrders.length} 条本地工单资料`);
+    } catch (error) {
+      setLocalDataMessage(`导出失败：${messageOf(error)}`);
+    } finally {
+      setLocalDataBusy(false);
+    }
+  };
+
+  const importLocalData = async (payload: string, fileName: string) => {
+    const accountKey = localAccountKey;
+    if (!accountKey) throw new Error("当前登录缺少本地账号标识，无法导入数据");
+    setLocalDataBusy(true);
+    setLocalDataMessage("");
+    try {
+      const items = await importLocalWorkOrderMeta(accountKey, payload);
+      setLocalWorkOrders(items);
+      setLocalDataMessage(`已从 ${fileName} 导入，本机现有 ${items.length} 条工单资料`);
+    } catch (error) {
+      setLocalDataMessage(`导入失败：${messageOf(error)}`);
+      throw error;
+    } finally {
+      setLocalDataBusy(false);
+    }
+  };
+
+  const clearLocalData = async () => {
+    const accountKey = localAccountKey;
+    if (!accountKey) {
+      setLocalDataMessage("当前登录缺少本地账号标识，无法清空数据");
+      return;
+    }
+    if (!window.confirm("确定清空当前账号的全部收藏、置顶、备注和预约吗？此操作不可撤销。")) return;
+    setLocalDataBusy(true);
+    setLocalDataMessage("");
+    try {
+      await clearLocalWorkOrderMeta(accountKey);
+      setLocalWorkOrders([]);
+      setLocalDataMessage("当前账号的本地工单资料已清空");
+    } catch (error) {
+      setLocalDataMessage(`清空失败：${messageOf(error)}`);
+    } finally {
+      setLocalDataBusy(false);
+    }
   };
 
   const setOrderStatus = (id: string, status: OrderStatus, backendStatusCode?: string) => setOrders((current) => current.map((order) => order.id === id ? { ...order, backendStatusCode: backendStatusCode ?? order.backendStatusCode, status } : order));
@@ -411,7 +824,7 @@ export default function App() {
         setRunMessage(`${order.woNumber} 已关闭，流转日志失败：${messageOf(error)}`);
       }
     }
-    setRunning(false); setRunMessage("本次批量任务已结束"); setScreen("records"); setMainTab("submit");
+    setRunning(false); setRunMessage("本次批量任务已结束"); setScreen("records"); setMainTab("more");
   };
 
   const retryLog = async (id: string) => {
@@ -437,27 +850,62 @@ export default function App() {
     }
   };
 
-  const refreshSession = async () => {
-    const status = await refreshAuthSession();
+  const applyUpdatedAuthStatus = (status: AuthStatus) => {
+    const savedHistoryId = localStorage.getItem(AUTO_LOGIN_HISTORY_STORAGE_KEY);
+    const currentHistoryId = localAccountKey?.startsWith("history:") ? localAccountKey.slice("history:".length) : null;
+    const nextAccountKey = localAccountKeyFor(status, currentHistoryId ?? (savedHistoryId === AUTO_LOGIN_DISABLED ? null : savedHistoryId));
+    if (localAccountKey && nextAccountKey && localAccountKey !== nextAccountKey) {
+      setLocalWorkOrders([]);
+      setLocalDataMessage("登录账号标识已更新，已切换到对应账号的本地工单数据");
+    } else if (!nextAccountKey) {
+      setLocalDataMessage("当前登录缺少可识别的账号信息，本地工单功能已停用");
+    }
+    setLocalAccountKey(nextAccountKey);
     setAuth(status);
-    return status;
+  };
+
+  const refreshSession = async () => {
+    if (sessionRefreshPromise.current) return sessionRefreshPromise.current;
+    const request = refreshAuthSession().then((status) => {
+      applyUpdatedAuthStatus(status);
+      return status;
+    });
+    sessionRefreshPromise.current = request;
+    try {
+      return await request;
+    } finally {
+      if (sessionRefreshPromise.current === request) sessionRefreshPromise.current = null;
+    }
   };
 
   const saveRefreshToken = async (refreshToken: string) => {
     const status = await setAuthRefreshToken(refreshToken);
-    setAuth(status);
+    applyUpdatedAuthStatus(status);
     return status;
   };
 
   const exportSession = (input: { verification: "biometric" | "password"; password?: string }) => exportAuthSession(input);
+
+  const logout = async () => {
+    localStorage.setItem(AUTO_LOGIN_HISTORY_STORAGE_KEY, AUTO_LOGIN_DISABLED);
+    const status = await logoutAuth();
+    setLocalAccountKey(null);
+    setAuth(status);
+    setDrawer(null);
+    setLocalDetailOrder(null);
+    setScreen("orders");
+    setMainTab("home");
+    return status;
+  };
 
   const handleAndroidBack = useCallback(() => {
     const pageBackEvent = new Event("kidindin:back", { cancelable: true });
     window.dispatchEvent(pageBackEvent);
     if (pageBackEvent.defaultPrevented) return;
 
-    if (drawer) { setDrawer(null); return; }
+    if (drawer) { setDrawer(null); setLocalDetailOrder(null); return; }
     if (filterOpen) { setOpenFilterPicker(null); setFilterOpen(false); return; }
+    if (displaySessionExpiryNotice) { setDismissedSessionExpiryKey(sessionExpiryKey); return; }
     if (loadError) { setLoadError(null); return; }
 
     switch (screen) {
@@ -475,7 +923,12 @@ export default function App() {
         return;
       case "mode":
         setScreen("orders");
-        setMainTab("home");
+        setMainTab("more");
+        return;
+      case "local-orders":
+      case "appointments":
+        setScreen("orders");
+        setMainTab("more");
         return;
       case "running":
         if (!running) setScreen("records");
@@ -484,7 +937,7 @@ export default function App() {
         if (mainTab !== "home") setMainTab("home");
         return;
     }
-  }, [drawer, filterOpen, loadError, mainTab, running, screen]);
+  }, [displaySessionExpiryNotice, drawer, filterOpen, loadError, mainTab, running, screen, sessionExpiryKey]);
 
   useEffect(() => {
     if (!isNativeRuntime()) return;
@@ -499,21 +952,60 @@ export default function App() {
     return () => { cancelled = true; void listener?.unregister(); };
   }, [handleAndroidBack]);
 
+  if (auth === null) return <div className={`app-shell theme-${appliedTheme}`}><main className="phone-frame"><div className="loading-mask" aria-live="polite">正在恢复登录…</div></main></div>;
   if (!loggedIn) return <div className={`app-shell theme-${appliedTheme}`}><main className="phone-frame"><LoginPage onLogin={login} history={authHistory} error={loginError} submitting={loggingIn} onRestoreHistory={loginWithHistory} /></main></div>;
 
   return <div className={`app-shell theme-${appliedTheme}`}><main className="phone-frame">
+    {displaySessionExpiryNotice && auth!.refreshAvailable ? <SessionExpiryNotice
+      expiresAt={sessionExpiryAt}
+      refreshAvailable
+      onRefresh={refreshSession}
+      onClose={() => setDismissedSessionExpiryKey(sessionExpiryKey)}
+    /> : null}
+    {displaySessionExpiryNotice && !auth!.refreshAvailable && activeOrder ? <SessionExpiryNotice
+      expiresAt={sessionExpiryAt}
+      refreshAvailable={false}
+      canOpenSettings
+      onOpenSettings={() => { setDismissedSessionExpiryKey(sessionExpiryKey); setDrawer("settings"); }}
+      onClose={() => setDismissedSessionExpiryKey(sessionExpiryKey)}
+    /> : null}
+    {displaySessionExpiryNotice && !auth!.refreshAvailable && !activeOrder ? <SessionExpiryNotice
+      expiresAt={sessionExpiryAt}
+      refreshAvailable={false}
+      canOpenSettings={false}
+      onRelogin={logout}
+      onClose={() => setDismissedSessionExpiryKey(sessionExpiryKey)}
+    /> : null}
     {loadError ? <p className="network-error">{loadError}<button onClick={() => void loadOrders()}>重试</button></p> : null}
-    {screen === "orders" && mainTab === "home" && <HomePage orders={filteredOrders} query={query} date={selectedDate} onQueryChange={setQuery} onDateChange={setSelectedDate} onOpenSettings={() => setDrawer("settings")} onFilter={() => setFilterOpen(true)} onDetail={(order) => { setActiveOrderId(order.id); setDrawer("detail"); }} />}
+    {screen === "orders" && mainTab === "home" && <HomePage orders={filteredOrders} query={query} date={selectedDate} localMetaById={localMetaById} prioritizePinned={sortField === "original"} onQueryChange={setQuery} onDateChange={setSelectedDate} onOpenSettings={() => setDrawer("settings")} onFilter={() => setFilterOpen(true)} onDetail={openCurrentOrderDetail} />}
     {screen === "orders" && mainTab === "stats" && <StatsPage orders={orders} date={selectedDate} onDateChange={setSelectedDate} onRetry={(id) => void retryLog(id)} />}
-    {screen === "mode" && <ModePage mode={submitMode} intervalMinSeconds={submitIntervalMinSeconds} intervalMaxSeconds={submitIntervalMaxSeconds} onModeChange={(mode) => { setSubmitMode(mode); setHistoryMode(mode === "historical" ? "auto" : "manual"); }} onIntervalMinChange={(value) => { setSubmitIntervalMinSeconds(value); setSubmitIntervalMaxSeconds((current) => Math.max(current, value)); }} onIntervalMaxChange={(value) => { setSubmitIntervalMaxSeconds(value); setSubmitIntervalMinSeconds((current) => Math.min(current, value)); }} onBack={() => { setScreen("orders"); setMainTab("home"); }} onNext={() => setScreen("select")} />}
-    {screen === "select" && <SubmitPage orders={pendingSubmitOrders} selected={pendingSelectedIds} mode={submitMode} date={selectedDate} onDateChange={setSelectedDate} onBack={() => setScreen("mode")} onFilter={() => setFilterOpen(true)} onToggle={toggleOrder} onToggleAll={toggleAllPendingOrders} onDetail={(order) => { setActiveOrderId(order.id); setDrawer("detail"); }} onPrepare={() => { if (selectedOrders.length) { setActiveOrderId(selectedOrders[0].id); setHistoryMode(submitMode === "historical" ? "auto" : "manual"); setScreen("prepare"); } }} />}
+    {screen === "orders" && mainTab === "more" && <MorePage items={localWorkOrders} busy={localDataBusy || !localAccountKey || localSavingOrderIds.length > 0} message={localDataMessage} onOpenBatchSubmit={() => { setLocalDetailOrder(null); setScreen("mode"); }} onOpenSaved={() => setScreen("local-orders")} onOpenAppointments={() => setScreen("appointments")} onExportLocalData={exportLocalData} onImportLocalData={importLocalData} onClearLocalData={clearLocalData} />}
+    {screen === "local-orders" && <LocalWorkOrdersPage mode="saved" items={localWorkOrders} savingIds={localSavingOrderIds} message={localDataMessage} onBack={() => { setScreen("orders"); setMainTab("more"); }} onOpenDetail={openLocalOrderDetail} onToggleFavorite={(item) => persistLocalWorkOrder(fromLocalMeta(item), { favorite: !item.favorite })} onTogglePinned={(item) => persistLocalWorkOrder(fromLocalMeta(item), { pinned: !item.pinned })} onClearAppointment={(item) => persistLocalWorkOrder(fromLocalMeta(item), { appointmentAt: null })} />}
+    {screen === "appointments" && <LocalWorkOrdersPage mode="appointments" items={localWorkOrders} savingIds={localSavingOrderIds} message={localDataMessage} onBack={() => { setScreen("orders"); setMainTab("more"); }} onOpenDetail={openLocalOrderDetail} onToggleFavorite={(item) => persistLocalWorkOrder(fromLocalMeta(item), { favorite: !item.favorite })} onTogglePinned={(item) => persistLocalWorkOrder(fromLocalMeta(item), { pinned: !item.pinned })} onClearAppointment={(item) => persistLocalWorkOrder(fromLocalMeta(item), { appointmentAt: null })} />}
+    {screen === "mode" && <ModePage mode={submitMode} intervalMinSeconds={submitIntervalMinSeconds} intervalMaxSeconds={submitIntervalMaxSeconds} onModeChange={(mode) => { setSubmitMode(mode); setHistoryMode(mode === "historical" ? "auto" : "manual"); }} onIntervalMinChange={(value) => { setSubmitIntervalMinSeconds(value); setSubmitIntervalMaxSeconds((current) => Math.max(current, value)); }} onIntervalMaxChange={(value) => { setSubmitIntervalMaxSeconds(value); setSubmitIntervalMinSeconds((current) => Math.min(current, value)); }} onBack={() => { setScreen("orders"); setMainTab("more"); }} onNext={() => setScreen("select")} />}
+    {screen === "select" && <SubmitPage orders={pendingSubmitOrders} selected={pendingSelectedIds} mode={submitMode} date={selectedDate} onDateChange={setSelectedDate} onBack={() => setScreen("mode")} onFilter={() => setFilterOpen(true)} onToggle={toggleOrder} onToggleAll={toggleAllPendingOrders} onDetail={openCurrentOrderDetail} onPrepare={() => { if (selectedOrders.length) { setActiveOrderId(selectedOrders[0].id); setHistoryMode(submitMode === "historical" ? "auto" : "manual"); setScreen("prepare"); } }} />}
     {screen === "prepare" && activeOrder && <PreparePage orders={selectedOrders} activeOrder={activeOrder} historyFileName={activeHistoryFile?.name ?? ""} historyMode={historyMode} historyPhotos={historyPhotos} historyPhotoError={historyPhotoError} historyPhotoLoading={historyPhotoLoading} libraryFileName={libraryFile?.name ?? ""} date={selectedDate} onDateChange={setSelectedDate} onBack={() => setScreen("select")} onSelectOrder={setActiveOrderId} onPickHistoryFile={(file) => { setHistoryMode("manual"); setHistoryFiles((current) => { const next = { ...current }; if (file) next[activeOrder.id] = file; else delete next[activeOrder.id]; return next; }); }} onHistoryModeChange={setHistoryMode} onFindHistoricalPhotos={() => void findHistoricalPhotos()} onSelectHistoricalPhoto={(photo) => { setHistoryMode("auto"); setHistoryFiles((current) => ({ ...current, [activeOrder.id]: photo.file })); }} onPickLibraryFile={setLibraryFile} onNext={() => { if (!libraryFile || selectedOrders.some((order) => !historyFiles[order.id])) { setLoadError("请为每个工单选择一张历史照片，并选择本机补图"); return; } setScreen("confirm"); }} />}
     {screen === "confirm" && <ConfirmPage orders={selectedOrders} historyFiles={historyFiles} libraryFile={libraryFile} reason={reason} remark={remark} operatorName={operatorName} operatorLocked={false} date={selectedDate} onDateChange={setSelectedDate} onBack={() => setScreen("prepare")} onReasonChange={setReason} onRemarkChange={setRemark} onOperatorNameChange={setCustomOperatorName} onStart={() => void runBatch()} />}
     {screen === "running" && <RunningPage total={batchOrders.length || selectedOrders.length} paused={paused} date={selectedDate} onDateChange={setSelectedDate} onBack={() => undefined} onTogglePause={() => setPaused((value) => !value)} onFinish={() => setScreen("records")} current={currentIndex} message={runMessage} running={running} />}
     {screen === "records" && <RecordsPage orders={batchOrders} date={selectedDate} onDateChange={setSelectedDate} onBack={() => setScreen("mode")} onRetry={(id) => void retryLog(id)} />}
-    {drawer && activeOrder && <AppDrawer type={drawer} order={activeOrder} detail={detail} detailAjInfo={detailAjInfo} detailLoading={detailLoading} detailError={detailError} theme={theme} auth={auth!} libraryPhotos={[]} defaultOperatorName={customOperatorName} setDefaultOperatorName={setCustomOperatorName} setTheme={setTheme} onRetryLog={retryLog} onRefreshSession={refreshSession} onSaveRefreshToken={saveRefreshToken} onExportSession={exportSession} onClose={() => setDrawer(null)} onLogout={() => { void logoutAuth().then(setAuth); setDrawer(null); setScreen("orders"); }} />}
-    {filterOpen && <div className="filter-overlay" onClick={() => { setOpenFilterPicker(null); setFilterOpen(false); }}><section className="filter-panel" onClick={(event) => event.stopPropagation()}><h2>筛选工单</h2><p>关键词、楼栋、单元和工单状态会叠加筛选；楼栋和单元选项来自当前日期实际加载的工单。</p><FilterPicker label="楼栋" value={buildingFilter} allLabel="全部楼栋" options={buildingOptions} open={openFilterPicker === "building"} onToggle={() => setOpenFilterPicker((current) => current === "building" ? null : "building")} onSelect={(value) => { setBuildingFilter(value); setUnitFilter("all"); setOpenFilterPicker(null); }} /><FilterPicker label="单元" value={unitFilter} allLabel="全部单元" options={unitOptions} open={openFilterPicker === "unit"} onToggle={() => setOpenFilterPicker((current) => current === "unit" ? null : "unit")} onSelect={(value) => { setUnitFilter(value); setOpenFilterPicker(null); }} /><div className="status-filter-options">{workOrderStatusOptions.map((option) => <button key={option.value} className={statusFilter === option.value ? "active" : ""} onClick={() => setStatusFilter(option.value)}>{option.label}</button>)}</div><button onClick={() => { setOpenFilterPicker(null); setFilterOpen(false); }}>完成（{filteredOrders.length} 条）</button></section></div>}
+    {drawer && activeOrder && <AppDrawer type={drawer} order={activeOrder} detail={detail} detailAjInfo={detailAjInfo} detailLoading={detailLoading} detailError={detailError} localMeta={localMetaById[activeOrder.woHeaderId] ?? null} theme={theme} auth={auth!} libraryPhotos={[]} defaultOperatorName={customOperatorName} setDefaultOperatorName={setCustomOperatorName} setTheme={setTheme} onUpdateLocalMeta={(patch) => persistLocalWorkOrder(activeOrder, patch)} onRetryLog={retryLog} onRefreshSession={refreshSession} onSaveRefreshToken={saveRefreshToken} onExportSession={exportSession} onClose={() => { setDrawer(null); setLocalDetailOrder(null); }} onLogout={() => { void logout().catch((error) => setLoadError(`退出登录失败：${messageOf(error)}`)); }} />}
+    {filterOpen && <div className="filter-overlay" onClick={() => { setOpenFilterPicker(null); setFilterOpen(false); }}><section className="filter-panel" onClick={(event) => event.stopPropagation()}>
+      <h2>筛选工单</h2>
+      <p>关键词、楼栋、单元、工单状态和排序方式会叠加应用；楼栋和单元选项来自当前日期实际加载的工单。</p>
+      <FilterPicker label="楼栋" value={buildingFilter} allLabel="全部楼栋" options={buildingOptions} open={openFilterPicker === "building"} onToggle={() => setOpenFilterPicker((current) => current === "building" ? null : "building")} onSelect={(value) => { setBuildingFilter(value); setUnitFilter("all"); setOpenFilterPicker(null); }} />
+      <FilterPicker label="单元" value={unitFilter} allLabel="全部单元" options={unitOptions} open={openFilterPicker === "unit"} onToggle={() => setOpenFilterPicker((current) => current === "unit" ? null : "unit")} onSelect={(value) => { setUnitFilter(value); setOpenFilterPicker(null); }} />
+      <span className="filter-section-label">工单状态</span>
+      <div className="status-filter-options">{workOrderStatusOptions.map((option) => <button type="button" key={option.value} className={statusFilter === option.value ? "active" : ""} onClick={() => setStatusFilter(option.value)}>{option.label}</button>)}</div>
+      <span className="filter-section-label">排序方式</span>
+      <div className="sort-filter-options">{workOrderSortOptions.map((option) => <button type="button" key={option.value} className={sortField === option.value ? "active" : ""} aria-pressed={sortField === option.value} onClick={() => setSortField(option.value)}>{option.label}</button>)}</div>
+      <span className="filter-section-label">排序方向</span>
+      <div className="sort-filter-options">
+        <button type="button" className={`sort-direction-button ${sortDirection === "asc" ? "active" : ""}`} aria-pressed={sortDirection === "asc"} disabled={sortField === "original"} onClick={() => setSortDirection("asc")}>升序</button>
+        <button type="button" className={`sort-direction-button ${sortDirection === "desc" ? "active" : ""}`} aria-pressed={sortDirection === "desc"} disabled={sortField === "original"} onClick={() => setSortDirection("desc")}>降序</button>
+      </div>
+      <button onClick={() => { setOpenFilterPicker(null); setFilterOpen(false); }}>完成（筛选并排序后 {filteredOrders.length} 条）</button>
+    </section></div>}
     {loadingOrders ? <div className="loading-mask">正在加载工单…</div> : null}
-    {screen === "orders" && <PrimaryNav active={mainTab} onChange={(tab) => { setMainTab(tab); setScreen(tab === "submit" ? "mode" : "orders"); }} />}
+    {screen === "orders" && <PrimaryNav active={mainTab} onChange={(tab) => { setMainTab(tab); setScreen("orders"); }} />}
   </main></div>;
 }

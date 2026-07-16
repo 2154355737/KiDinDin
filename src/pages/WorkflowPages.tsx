@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { Button } from "@heroui/react";
+import { m } from "framer-motion";
 import type { WorkOrder } from "../types/workOrder";
 import { Icon } from "../components/Icon";
 import { SubHeader } from "../components/Navigation";
 import { StatusBadge } from "../components/WorkOrderList";
+import { WorkflowSteps } from "../components/WorkflowSteps";
 
 type DateProps = { date: string; onDateChange: (value: string) => void };
 
@@ -14,10 +16,6 @@ type HistoryPhotoCandidate = {
   originalName: string;
   previewUrl: string;
 };
-
-function WorkflowSteps({ current }: { current: number }) {
-  return <div className="stepper workflow-steps">{[1, 2, 3, 4, 5].flatMap((step) => step === 1 ? [<span key={step} className={step === current ? "current" : ""}>{step}</span>] : [<i key={`line-${step}`} />, <span key={step} className={step === current ? "current" : ""}>{step}</span>])}<em>{["设置", "选择", "确认", "执行", "补发"][current - 1]}</em></div>;
-}
 
 export function ModePage({ mode, intervalMinSeconds, intervalMaxSeconds, onModeChange, onIntervalMinChange, onIntervalMaxChange, onBack, onNext }: { mode: "manual" | "historical"; intervalMinSeconds: number; intervalMaxSeconds: number; onModeChange: (value: "manual" | "historical") => void; onIntervalMinChange: (value: number) => void; onIntervalMaxChange: (value: number) => void; onBack: () => void; onNext: () => void }) {
   return <><header className="subheader"><button className="back-button" onClick={onBack} aria-label="返回"><Icon name="chevron" /></button><h1>批量提交设置</h1><div /></header><WorkflowSteps current={1} /><section className="workflow-intro"><p className="eyebrow">步骤 1</p><h2>选择提交模式与间隔</h2><span>工单将按顺序执行，间隔只在相邻两单之间生效。</span></section><section className="mode-options"><button type="button" className={mode === "manual" ? "active" : ""} onClick={() => onModeChange("manual")}><b>手动图片提交</b><span>手动上传或选择历史到访照片</span></button><button type="button" className={mode === "historical" ? "active" : ""} onClick={() => onModeChange("historical")}><b>历史到访不遇</b><span>自动核验历史工单，再手动选择命中照片</span></button></section><section className="interval-setting"><div><b>工单提交间隔</b><span>避免连续请求过快，下一单会随机等待</span></div><label><input type="number" min="0" max="300" value={intervalMinSeconds} onChange={(event) => onIntervalMinChange(Math.max(0, Math.min(300, Number(event.target.value) || 0)))} /><i>–</i><input type="number" min="0" max="300" value={intervalMaxSeconds} onChange={(event) => onIntervalMaxChange(Math.max(0, Math.min(300, Number(event.target.value) || 0)))} /><em>秒</em></label></section><div className="page-action"><Button className="primary-button" onPress={onNext}>下一步：选择工单 <Icon name="chevron" size={17} /></Button></div></>;
@@ -44,7 +42,8 @@ export function ConfirmPage({ orders, historyFiles, libraryFile, reason, remark,
 
 export function RunningPage({ total, current, message, running, paused, date, onDateChange, onBack, onTogglePause, onFinish }: { total: number; current: number; message: string; running: boolean; paused: boolean; onBack: () => void; onTogglePause: () => void; onFinish: () => void } & DateProps) {
   const safeTotal = Math.max(total, 1);
-  return <><SubHeader title="正在提交" date={date} onDateChange={onDateChange} onBack={onBack} /><WorkflowSteps current={4} /><div className="run-status"><div className="run-ring"><b>{current}</b><span>/{total}</span></div><h2>{running ? `正在处理第 ${current} 单` : "任务已结束"}</h2><p>{message}</p><div className="progress-track"><i style={{ width: `${(current / safeTotal) * 100}%` }} /></div></div><section className="run-current"><div className="run-label">执行顺序 <StatusBadge status={running ? "待提交" : "已结束"} /></div><b>上传两张图片 → 关闭安检工单 → 写入流转日志</b><span>关闭成功但日志失败的工单可在记录页单独补发。</span><ol><li className="done">图片已由安卓原生层编码并上传</li><li className={running && !paused ? "working" : ""}>当前接口请求中</li><li>关闭安检工单</li><li>写入到访不遇日志</li></ol></section><section className="log-panel"><div>任务状态 <span>实时</span></div><p>{message}</p><p className="muted">所有工单按顺序串行执行，避免重复关闭。</p></section><div className="run-actions">{running ? <Button className="secondary-button" onPress={onTogglePause} isDisabled>{paused ? <><Icon name="play" size={16} />暂停功能准备中</> : <><Icon name="pause" size={16} />串行提交中</>}</Button> : <Button className="primary-button" onPress={onFinish}>下一步：补发流转日志</Button>}</div></>;
+  const progress = Math.max(0, Math.min(100, (current / safeTotal) * 100));
+  return <><SubHeader title="正在提交" date={date} onDateChange={onDateChange} onBack={onBack} /><WorkflowSteps current={4} /><div className="run-status"><div className="run-ring"><b>{current}</b><span>/{total}</span></div><h2>{running ? `正在处理第 ${current} 单` : "任务已结束"}</h2><p role="status" aria-live="polite" aria-atomic="true">{message}</p><div className="progress-track" role="progressbar" aria-label="工单提交进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress)}><m.i initial={false} animate={{ width: `${progress}%` }} transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }} /></div></div><section className="run-current"><div className="run-label">执行顺序 <StatusBadge status={running ? "待提交" : "已结束"} /></div><b>上传两张图片 → 关闭安检工单 → 写入流转日志</b><span>关闭成功但日志失败的工单可在记录页单独补发。</span><ol><li className="done">图片已由安卓原生层编码并上传</li><li className={running && !paused ? "working" : ""}>当前接口请求中</li><li>关闭安检工单</li><li>写入到访不遇日志</li></ol></section><section className="log-panel"><div>任务状态 <span>实时</span></div><p>{message}</p><p className="muted">所有工单按顺序串行执行，避免重复关闭。</p></section><div className="run-actions">{running ? <Button className="secondary-button" onPress={onTogglePause} isDisabled>{paused ? <><Icon name="play" size={16} />暂停功能准备中</> : <><Icon name="pause" size={16} />串行提交中</>}</Button> : <Button className="primary-button" onPress={onFinish}>下一步：补发流转日志</Button>}</div></>;
 }
 
 export function RecordsPage({ orders, date, onDateChange, onBack, onRetry }: { orders: WorkOrder[]; onBack: () => void; onRetry: (id: string) => void } & DateProps) {

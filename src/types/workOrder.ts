@@ -1,5 +1,5 @@
-export type Screen = "orders" | "mode" | "select" | "prepare" | "confirm" | "running" | "records";
-export type MainTab = "home" | "stats" | "submit";
+export type Screen = "orders" | "mode" | "select" | "prepare" | "confirm" | "running" | "records" | "local-orders" | "appointments";
+export type MainTab = "home" | "stats" | "more";
 export type OrderStatus = "待处理" | "处理中" | "已完成" | "已结束" | "待提交" | "关闭失败" | "日志失败" | "未知";
 export type WorkOrderStatusFilter = "all" | "20" | "30" | "done" | "60";
 export type Theme = "system" | "light" | "dark";
