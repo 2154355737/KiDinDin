@@ -171,7 +171,7 @@ export function LocalWorkOrdersPage({
   return <>
     <header className="subheader local-work-orders-header">
       <button type="button" className="back-button" onClick={onBack} aria-label="返回"><Icon name="chevron" /></button>
-      <div><p className="eyebrow">仅保存在本机</p><h1>{mode === "saved" ? "我的工单" : "预约日程"}</h1></div>
+      <div><h1>{mode === "saved" ? "我的工单" : "预约日程"}</h1></div>
       <span className="local-work-orders-count">{mode === "saved" ? items.length : items.filter((item) => item.appointmentAt).length}</span>
     </header>
 

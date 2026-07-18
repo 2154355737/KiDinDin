@@ -61,7 +61,10 @@ export function WorkOrderList({ orders, selected = [], localMetaById = {}, onTog
               <StatusBadge status={order.status} />
             </div>
             <div className="order-title">{order.resident}<span>{order.unit}</span></div>
-            <div className="order-meta"><span>{order.address}</span><span><Icon name="clock" size={13} />{order.time}</span></div>
+            <div className="order-meta">
+              <span>{order.address}</span>
+              {order.time === "待安排" ? <span className={`order-favorite-badge ${localMeta?.favorite ? "is-favorite" : ""}`}><Icon name="star" size={11} />{localMeta?.favorite ? "已收藏" : "未收藏"}</span> : <span><Icon name="clock" size={13} />{order.time}</span>}
+            </div>
           </button>
           {selectable && <button className="select-control" onClick={() => onToggle?.(order.id)} aria-label={`选择${order.id}`}>
             <span>{isSelected && <Icon name="check" size={15} />}</span>

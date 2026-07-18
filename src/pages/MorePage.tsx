@@ -7,6 +7,7 @@ export type MorePageProps = {
   busy?: boolean;
   message?: string;
   onOpenBatchSubmit: () => void;
+  onOpenLogAudit: () => void;
   onOpenSaved: () => void;
   onOpenAppointments: () => void;
   onExportLocalData: () => void | Promise<void>;
@@ -19,6 +20,7 @@ export function MorePage({
   busy = false,
   message = "",
   onOpenBatchSubmit,
+  onOpenLogAudit,
   onOpenSaved,
   onOpenAppointments,
   onExportLocalData,
@@ -52,8 +54,7 @@ export function MorePage({
 
   return <>
     <header className="topbar more-page-header">
-      <div><p className="eyebrow">本机工作台</p><h1>更多功能</h1></div>
-      <span className="more-local-badge">仅保存在本机</span>
+      <div><h1>更多功能</h1></div>
     </header>
 
     <section className="more-page-summary" aria-label="本地工单概览">
@@ -63,37 +64,44 @@ export function MorePage({
     </section>
 
     <section className="more-page-section">
-      <div className="more-section-heading"><h2>工单工具</h2><p>批量处理与个人工单标记</p></div>
-      <button type="button" className="more-feature-card more-feature-primary" onClick={onOpenBatchSubmit}>
-        <span className="more-feature-icon"><Icon name="tasks" size={21} /></span>
-        <span className="more-feature-copy"><b>批量提交</b><small>使用现有流程批量处理到访不遇工单</small></span>
-        <Icon name="chevron" size={18} />
-      </button>
+      <div className="more-section-heading"><h2>工单工具</h2></div>
+      <div className="more-feature-stack">
+        <button type="button" className="more-feature-card more-feature-primary" onClick={onOpenBatchSubmit}>
+          <span className="more-feature-icon"><Icon name="tasks" size={21} /></span>
+          <span className="more-feature-copy"><b>批量提交</b></span>
+          <Icon name="chevron" size={18} />
+        </button>
+        <button type="button" className="more-feature-card" onClick={onOpenLogAudit}>
+          <span className="more-feature-icon"><Icon name="audit" size={20} /></span>
+          <span className="more-feature-copy"><b>流转审核</b></span>
+          <Icon name="chevron" size={17} />
+        </button>
+      </div>
       <div className="more-feature-grid">
         <button type="button" className="more-feature-card" onClick={onOpenSaved}>
           <span className="more-feature-icon"><Icon name="star" size={20} /></span>
-          <span className="more-feature-copy"><b>我的工单</b><small>{counts.favorites} 收藏 · {counts.pinned} 置顶</small></span>
+          <span className="more-feature-copy"><b>我的工单</b></span>
           <Icon name="chevron" size={17} />
         </button>
         <button type="button" className="more-feature-card" onClick={onOpenAppointments}>
           <span className="more-feature-icon"><Icon name="appointment" size={20} /></span>
-          <span className="more-feature-copy"><b>预约日程</b><small>{counts.appointments ? `${counts.appointments} 个预约待跟进` : "暂无预约"}</small></span>
+          <span className="more-feature-copy"><b>预约日程</b></span>
           <Icon name="chevron" size={17} />
         </button>
       </div>
     </section>
 
     <section className="more-page-section local-data-section">
-      <div className="more-section-heading"><h2>本地数据</h2><p>标记不会同步到其他设备，建议定期导出备份</p></div>
+      <div className="more-section-heading"><h2>本地数据</h2></div>
       <div className="local-data-actions">
         <button type="button" disabled={busy} onClick={() => void onExportLocalData()}>
-          <Icon name="download" size={18} /><span><b>导出数据</b><small>保存 JSON 备份</small></span>
+          <Icon name="download" size={18} /><span><b>导出数据</b></span>
         </button>
         <button type="button" disabled={busy} onClick={() => importInput.current?.click()}>
-          <Icon name="upload" size={18} /><span><b>导入数据</b><small>读取 UTF-8 JSON</small></span>
+          <Icon name="upload" size={18} /><span><b>导入数据</b></span>
         </button>
         <button type="button" className="local-data-clear" disabled={busy || items.length === 0} onClick={() => void onClearLocalData()}>
-          <Icon name="trash" size={18} /><span><b>清空数据</b><small>删除全部本地标记</small></span>
+          <Icon name="trash" size={18} /><span><b>清空数据</b></span>
         </button>
       </div>
       <input ref={importInput} className="local-data-file-input" type="file" accept="application/json,.json" hidden onChange={(event) => void handleImport(event)} />
