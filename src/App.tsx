@@ -52,7 +52,11 @@ import {
   type UploadedFile,
   type WorkOrderDetail,
 } from "./services/workOrderApi";
-import { isNativeRuntime, type AuthStatus } from "./services/tauri";
+import {
+  fetchIsMobileRuntime,
+  isNativeRuntime,
+  type AuthStatus,
+} from "./services/tauri";
 import {
   getWorkOrderStatus,
   matchesWorkOrderStatus,
@@ -126,8 +130,10 @@ const CLOSE_REASON_UNREACHABLE = "11";
 const EXCHANGE_TYPE_UNREACHABLE = "80";
 const DEFAULT_OPERATOR_NAME_STORAGE_KEY = "kidindin.default-operator-name";
 const AUTO_LOGIN_HISTORY_STORAGE_KEY = "kidindin.auto-login-history-id";
+const AUTO_REFRESH_STORAGE_PREFIX = "kidindin.auto-refresh-at:";
 const PENDING_LOG_RETRY_STORAGE_PREFIX = "kidindin.pending-log-retries:";
 const AUTO_LOGIN_DISABLED = "disabled";
+const AUTO_REFRESH_COOLDOWN_MS = 3 * 60 * 60_000;
 const TOKEN_EXPIRY_WARNING_MS = 30 * 60_000;
 
 function normalizeExpiryTimestamp(expiresAt: number | null | undefined) {
@@ -151,6 +157,22 @@ function localAccountKeyFor(status: AuthStatus, historyId?: string | null) {
   const username = status.username?.trim();
   if (username) return `username:${username}`;
   return historyId?.trim() ? `history:${historyId.trim()}` : null;
+}
+
+function autoRefreshStorageKey(accountKey: string) {
+  return `${AUTO_REFRESH_STORAGE_PREFIX}${accountKey}`;
+}
+
+function isAutoRefreshCoolingDown(accountKey: string, now = Date.now()) {
+  const lastRefreshAt = Number(
+    localStorage.getItem(autoRefreshStorageKey(accountKey)),
+  );
+  return (
+    Number.isFinite(lastRefreshAt) &&
+    lastRefreshAt > 0 &&
+    lastRefreshAt <= now &&
+    now - lastRefreshAt < AUTO_REFRESH_COOLDOWN_MS
+  );
 }
 
 function tokenHintFromInput(tokenText: string) {
@@ -556,6 +578,9 @@ export default function App() {
   const [authHistory, setAuthHistory] = useState<AuthHistoryItem[]>([]);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loggingIn, setLoggingIn] = useState(false);
+  const [startupRefreshNotice, setStartupRefreshNotice] = useState<
+    string | null
+  >(null);
   const [sessionExpiryNow, setSessionExpiryNow] = useState(() => Date.now());
   const [dismissedSessionExpiryKey, setDismissedSessionExpiryKey] = useState<
     string | null
@@ -992,7 +1017,8 @@ export default function App() {
 
     const bootstrapAuth = async () => {
       try {
-        const [current, history] = await Promise.all([
+        const [mobileRuntime, current, history] = await Promise.all([
+          fetchIsMobileRuntime(),
           fetchAuthStatus(),
           fetchAuthHistory(),
         ]);
@@ -1025,6 +1051,57 @@ export default function App() {
           restoredHistory = true;
         }
 
+        const refreshAccountKey = localAccountKeyFor(
+          next,
+          activeHistoryId ?? autoLoginHistory?.id ?? history[0]?.id,
+        );
+        const autoRefreshCoolingDown = refreshAccountKey
+          ? isAutoRefreshCoolingDown(refreshAccountKey)
+          : false;
+        let autoRefreshError: unknown = null;
+        if (
+          mobileRuntime &&
+          next.authenticated &&
+          next.refreshAvailable &&
+          !autoRefreshCoolingDown
+        ) {
+          let refreshRequest = sessionRefreshPromise.current;
+          if (!refreshRequest) {
+            refreshRequest = refreshAuthSession();
+            sessionRefreshPromise.current = refreshRequest;
+          }
+          try {
+            next = await refreshRequest;
+            restoredHistory = true;
+            if (refreshAccountKey) {
+              const refreshedAccountKey =
+                localAccountKeyFor(
+                  next,
+                  activeHistoryId ?? autoLoginHistory?.id ?? history[0]?.id,
+                ) ?? refreshAccountKey;
+              const refreshedAt = String(Date.now());
+              localStorage.setItem(
+                autoRefreshStorageKey(refreshAccountKey),
+                refreshedAt,
+              );
+              if (refreshedAccountKey !== refreshAccountKey)
+                localStorage.setItem(
+                  autoRefreshStorageKey(refreshedAccountKey),
+                  refreshedAt,
+                );
+            }
+            if (active)
+              setStartupRefreshNotice(
+                "Token 自动续期成功，3 小时内启动 App 不会重复续期",
+              );
+          } catch (error) {
+            autoRefreshError = error;
+          } finally {
+            if (sessionRefreshPromise.current === refreshRequest)
+              sessionRefreshPromise.current = null;
+          }
+        }
+
         const nextExpiryAt = normalizeExpiryTimestamp(next.expiresAt);
         if (
           next.authenticated &&
@@ -1033,8 +1110,10 @@ export default function App() {
         ) {
           if (!next.refreshAvailable)
             throw new Error("最近一次登录已过期，且没有可用的 refresh_token");
-          next = await refreshAuthSession();
-          restoredHistory = true;
+          if (autoRefreshError)
+            throw new Error(
+              `最近一次登录已过期，自动续期失败：${messageOf(autoRefreshError)}`,
+            );
         }
 
         if (!active) return;
@@ -1947,7 +2026,35 @@ export default function App() {
 
   const refreshSession = async () => {
     if (sessionRefreshPromise.current) return sessionRefreshPromise.current;
+    const savedHistoryId = localStorage.getItem(AUTO_LOGIN_HISTORY_STORAGE_KEY);
+    const currentRefreshAccountKey =
+      localAccountKey ??
+      (auth
+        ? localAccountKeyFor(
+            auth,
+            savedHistoryId === AUTO_LOGIN_DISABLED ? null : savedHistoryId,
+          )
+        : null);
     const request = refreshAuthSession().then((status) => {
+      const refreshedAt = String(Date.now());
+      const nextRefreshAccountKey =
+        localAccountKeyFor(
+          status,
+          savedHistoryId === AUTO_LOGIN_DISABLED ? null : savedHistoryId,
+        ) ?? currentRefreshAccountKey;
+      if (currentRefreshAccountKey)
+        localStorage.setItem(
+          autoRefreshStorageKey(currentRefreshAccountKey),
+          refreshedAt,
+        );
+      if (
+        nextRefreshAccountKey &&
+        nextRefreshAccountKey !== currentRefreshAccountKey
+      )
+        localStorage.setItem(
+          autoRefreshStorageKey(nextRefreshAccountKey),
+          refreshedAt,
+        );
       applyUpdatedAuthStatus(status);
       return status;
     });
@@ -1989,6 +2096,15 @@ export default function App() {
     const timeout = window.setTimeout(() => setLoadError(null), 7_000);
     return () => window.clearTimeout(timeout);
   }, [loadError]);
+
+  useEffect(() => {
+    if (!startupRefreshNotice) return;
+    const timeout = window.setTimeout(
+      () => setStartupRefreshNotice(null),
+      5_000,
+    );
+    return () => window.clearTimeout(timeout);
+  }, [startupRefreshNotice]);
 
   const handleAndroidBack = useCallback(() => {
     const pageBackEvent = new Event("kidindin:back", { cancelable: true });
@@ -2101,6 +2217,7 @@ export default function App() {
       <main
         className={`phone-frame screen-${screen}`}
         aria-busy={loadingOrders}
+        inert={loadingOrders}
         onTouchStart={handlePullRefreshStart}
         onTouchMove={handlePullRefreshMove}
         onTouchEnd={handlePullRefreshEnd}
@@ -2463,10 +2580,10 @@ export default function App() {
           )}
         </Suspense>
         <Suspense fallback={null}>
-          {drawer && activeOrder && (
+          {drawer && (drawer === "settings" || activeOrder) && (
             <AppDrawer
             type={drawer}
-            order={activeOrder}
+            order={activeOrder ?? null}
             detail={detail}
             detailAjInfo={detailAjInfo}
             detailLoading={detailLoading}
@@ -2640,18 +2757,37 @@ export default function App() {
             </section>
           </div>
         )}
-        {loadingOrders ? (
-          <div className="orders-loading-shield" role="status" aria-live="polite">
-            <span>
-              <Icon name="refresh" size={13} />
-              正在加载工单…
-            </span>
-          </div>
-        ) : null}
         {screen === "orders" && (
           <PrimaryNav active={mainTab} onChange={setMainTab} />
         )}
       </main>
+      {loadingOrders ? (
+        <div className="orders-loading-shield" role="status" aria-live="polite">
+          <span>
+            <Icon name="refresh" size={13} />
+            正在加载工单…
+          </span>
+        </div>
+      ) : null}
+      {startupRefreshNotice ? (
+        <div
+          className="startup-refresh-notice"
+          role="status"
+          aria-live="polite"
+        >
+          <span className="startup-refresh-notice-icon">
+            <Icon name="check" size={15} />
+          </span>
+          <span>{startupRefreshNotice}</span>
+          <button
+            type="button"
+            aria-label="关闭 Token 续期提示"
+            onClick={() => setStartupRefreshNotice(null)}
+          >
+            <Icon name="close" size={14} />
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

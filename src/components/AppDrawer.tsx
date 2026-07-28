@@ -188,7 +188,7 @@ export function AppDrawer({
   onLogout,
 }: {
   type: DrawerKind;
-  order: WorkOrder;
+  order: WorkOrder | null;
   detail: WorkOrderDetail | null;
   detailAjInfo: Record<string, unknown> | null;
   detailLoading: boolean;
@@ -237,17 +237,20 @@ export function AppDrawer({
   const [drawerDragOffset, setDrawerDragOffset] = useState(0);
   const [drawerDragging, setDrawerDragging] = useState(false);
   const drawerDragStart = useRef<{ pointerId: number; startY: number; startedAt: number } | null>(null);
-  const canRetryLog =
-    order.backendStatusCode === "60" ||
-    order.status === "日志失败" ||
-    order.status === "已结束";
+  const canRetryLog = Boolean(
+    order &&
+      (order.backendStatusCode === "60" ||
+        order.status === "日志失败" ||
+        order.status === "已结束"),
+  );
   useEffect(() => {
     setExchangeLogs(null);
     setExchangeLogsLoading(false);
     setExchangeLogsError("");
-  }, [order.woHeaderId]);
+  }, [order?.woHeaderId]);
 
   const confirmRetryLog = async () => {
+    if (!order) return;
     setRetryingLog(true);
     const result = await onRetryLog(order.id);
     setRetryingLog(false);
@@ -256,6 +259,7 @@ export function AppDrawer({
   };
 
   const checkBeforeRetryLog = async () => {
+    if (!order) return;
     setCheckingLog(true);
     setRetryMessage("");
     try {
@@ -268,6 +272,7 @@ export function AppDrawer({
   };
 
   const loadExchangeLogs = async () => {
+    if (!order) return;
     setExchangeLogsLoading(true);
     setExchangeLogsError("");
     try {
@@ -419,7 +424,7 @@ export function AppDrawer({
             <Icon name="close" />
           </button>
         </header>
-        {type === "detail" && (
+        {type === "detail" && order && (
           <div className="drawer-content detail-content">
             <div className="detail-hero">
               <StatusBadge status={order.status} />

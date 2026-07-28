@@ -61,3 +61,7 @@ export function nativeRequest(path: string, method: string, body?: unknown) {
 export function fetchDeviceIdentityPreview() {
   return nativeInvoke<DeviceIdentityPreview>("device_identity_preview");
 }
+
+export function fetchIsMobileRuntime() {
+  return nativeInvoke<boolean>("is_mobile_runtime");
+}

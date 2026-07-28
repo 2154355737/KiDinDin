@@ -496,6 +496,11 @@ fn device_identity_preview() -> DeviceIdentityPreview {
 }
 
 #[tauri::command]
+fn is_mobile_runtime() -> bool {
+    cfg!(mobile)
+}
+
+#[tauri::command]
 async fn cis_download_file(path: String, file_name: String, state: State<'_, CisState>) -> Result<DownloadedFile, String> {
     if path.trim().is_empty() { return Err("图片下载地址为空".into()); }
     let session = state.session.lock().map_err(|_| "会话锁定失败")?.clone().ok_or_else(|| "登录已失效，请重新粘贴登录凭据".to_string())?;
@@ -566,6 +571,7 @@ pub fn run() {
             cis_refresh_auth_session,
             cis_export_auth_session,
             device_identity_preview,
+            is_mobile_runtime,
             cis_download_file,
             cis_request,
             cis_upload_files

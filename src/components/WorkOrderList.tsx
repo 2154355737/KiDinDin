@@ -31,6 +31,7 @@ const SWIPE_HORIZONTAL_BIAS = 1.35;
 const SWIPE_MAX_OFFSET = 82;
 const SWIPE_COMMIT_DURATION_MS = 120;
 const SWIPE_RESET_DURATION_MS = 180;
+const SWIPE_RESET_CLEANUP_DELAY_MS = SWIPE_RESET_DURATION_MS + 32;
 const PIN_POPOVER_ESTIMATED_WIDTH = 112;
 const PIN_POPOVER_ESTIMATED_HEIGHT = 42;
 const PIN_POPOVER_VIEWPORT_MARGIN = 8;
@@ -279,6 +280,8 @@ export function WorkOrderList({
   });
   const swipeCommitTimerRef = useRef<number | null>(null);
   const swipeResetTimerRef = useRef<number | null>(null);
+  const swipeFrameRef = useRef<number | null>(null);
+  const pendingSwipeVisualRef = useRef<SwipeVisual | null>(null);
   const swipeSequenceRef = useRef(0);
   const suppressDetailRef = useRef<string | null>(null);
   const suppressDetailTimerRef = useRef<number | null>(null);
@@ -287,9 +290,30 @@ export function WorkOrderList({
     previousCountRef.current = orders.length;
   }, [orders.length]);
 
+  const cancelScheduledSwipeVisual = () => {
+    if (swipeFrameRef.current != null)
+      window.cancelAnimationFrame(swipeFrameRef.current);
+    swipeFrameRef.current = null;
+    pendingSwipeVisualRef.current = null;
+  };
+
   const updateSwipeVisual = (next: SwipeVisual) => {
+    cancelScheduledSwipeVisual();
     swipeVisualRef.current = next;
     setSwipeVisual(next);
+  };
+
+  const scheduleSwipeVisual = (next: SwipeVisual) => {
+    swipeVisualRef.current = next;
+    pendingSwipeVisualRef.current = next;
+    if (swipeFrameRef.current != null) return;
+    swipeFrameRef.current = window.requestAnimationFrame(() => {
+      swipeFrameRef.current = null;
+      const pending = pendingSwipeVisualRef.current;
+      pendingSwipeVisualRef.current = null;
+      if (pending && swipeVisualRef.current === pending)
+        setSwipeVisual(pending);
+    });
   };
 
   const clearPointerTimer = (pointer = pointerRef.current) => {
@@ -298,6 +322,7 @@ export function WorkOrderList({
   };
 
   const clearSwipeTimers = () => {
+    cancelScheduledSwipeVisual();
     if (swipeCommitTimerRef.current != null)
       window.clearTimeout(swipeCommitTimerRef.current);
     if (swipeResetTimerRef.current != null)
@@ -356,7 +381,7 @@ export function WorkOrderList({
     else
       swipeResetTimerRef.current = window.setTimeout(
         reset,
-        SWIPE_RESET_DURATION_MS,
+        SWIPE_RESET_CLEANUP_DELAY_MS,
       );
   };
 
@@ -467,7 +492,7 @@ export function WorkOrderList({
     }
     if (pointer.axis !== "horizontal") return;
     if (event.cancelable) event.preventDefault();
-    updateSwipeVisual({
+    scheduleSwipeVisual({
       direction: deltaX > 0 ? "note" : "favorite",
       orderKey: pointer.orderKey,
       offsetX: clamp(deltaX, -SWIPE_MAX_OFFSET, SWIPE_MAX_OFFSET),
