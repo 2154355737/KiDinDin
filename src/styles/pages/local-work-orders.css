@@ -1,0 +1,515 @@
+/* Local work-order lists and appointment timeline */
+
+.local-work-orders-header {
+  height: auto;
+  min-height: 58px;
+}
+
+.local-work-orders-header > div {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+}
+
+.local-work-orders-header .back-button {
+  margin-left: -10px;
+}
+
+.local-work-order-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin: 0 0 7px;
+}
+
+.local-work-order-tabs button {
+  height: 35px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 1px solid #e0e6ef;
+  border-radius: 10px;
+  background: #fff;
+  color: #68788e;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.local-work-order-tabs button span {
+  min-width: 16px;
+  height: 16px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 8px;
+  background: #edf1f6;
+  font-size: 8px;
+}
+
+.local-work-order-tabs button.active {
+  border-color: #8bb7f7;
+  background: #ebf3ff;
+  color: #2563eb;
+}
+
+.local-work-order-search {
+  margin-bottom: 10px;
+}
+
+.local-page-message {
+  margin: -5px 0 10px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  background: #fff2e5;
+  color: #a65a1e;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.local-work-order-list {
+  display: grid;
+  gap: 9px;
+}
+
+.local-work-order-card {
+  overflow: hidden;
+  border: 1px solid #e1e7ef;
+  border-radius: 15px;
+  background: #fff;
+}
+
+.local-work-order-card.is-pinned {
+  border-color: #9fc3fa;
+  box-shadow: inset 3px 0 #3b82f6;
+}
+
+.local-work-order-card.is-saving {
+  opacity: .72;
+}
+
+.local-work-order-main {
+  width: 100%;
+  display: block;
+  padding: 11px 12px 9px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.local-work-order-heading,
+.local-work-order-title,
+.local-work-order-meta,
+.local-work-order-detail-label {
+  display: flex;
+  align-items: center;
+}
+
+.local-work-order-heading {
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.local-work-order-id {
+  overflow: hidden;
+  color: #63738a;
+  font: 700 9px ui-monospace, SFMono-Regular, Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.local-work-order-status {
+  flex: none;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: #edf2f7;
+  color: #67778c;
+  font-size: 8px;
+  font-weight: 750;
+}
+
+.local-work-order-title {
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.local-work-order-title b {
+  font-size: 14px;
+}
+
+.local-work-order-title span {
+  overflow: hidden;
+  color: #6f7e92;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.local-work-order-address {
+  margin: 5px 0 7px;
+  overflow: hidden;
+  color: #718096;
+  font-size: 10px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.local-work-order-meta {
+  flex-wrap: wrap;
+  gap: 5px 10px;
+  color: #8795a6;
+  font-size: 9px;
+}
+
+.local-work-order-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.local-work-order-meta .local-work-order-appointment {
+  color: #2f72ca;
+  font-weight: 700;
+}
+
+.local-work-order-detail-label {
+  justify-content: flex-end;
+  margin-top: 8px;
+  color: #4777b7;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.local-work-order-note {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 7px;
+  padding: 7px 12px;
+  border-top: 1px solid #edf0f4;
+  background: #fafbfd;
+}
+
+.local-work-order-note b {
+  color: #66768b;
+  font-size: 9px;
+}
+
+.local-work-order-note p {
+  margin: 0;
+  color: #4e5f75;
+  font-size: 10px;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.local-work-order-note.is-empty p {
+  color: #a0a9b6;
+}
+
+.local-work-order-actions {
+  display: flex;
+  gap: 6px;
+  padding: 7px 10px 9px;
+  border-top: 1px solid #edf0f4;
+}
+
+.local-work-order-actions button {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 0 9px;
+  border: 1px solid #dfe6ef;
+  border-radius: 8px;
+  background: #fff;
+  color: #69798e;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.local-work-order-actions button.is-active {
+  border-color: #a4c5f6;
+  background: #edf5ff;
+  color: #2563eb;
+}
+
+.local-work-order-actions button:disabled {
+  cursor: wait;
+}
+
+.local-work-order-actions .clear-appointment-button {
+  margin-left: auto;
+  color: #b25159;
+}
+
+.appointment-groups {
+  display: grid;
+  gap: 17px;
+}
+
+.appointment-group > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 2px 8px;
+}
+
+.appointment-group > header h2 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.appointment-group > header span {
+  color: #8190a4;
+  font-size: 9px;
+}
+
+.appointment-group-overdue > header h2 {
+  color: #c0565f;
+}
+
+/* Compact local markers on the home list */
+
+.order-card.locally-pinned {
+  box-shadow: inset 3px 0 #3b82f6;
+}
+
+.order-id-line {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.local-order-flags {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: #3775ca;
+}
+
+.order-favorite-badge {
+  color: #8795a8;
+}
+
+.order-favorite-badge.is-favorite {
+  color: #c78117;
+  font-weight: 700;
+}
+
+/* Local metadata editor in the detail drawer */
+
+.local-workorder-block {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 13px;
+  padding: 12px;
+  border: 1px solid #dfe7f2;
+  border-radius: 14px;
+  background: #f8fafd;
+}
+
+.local-workorder-heading {
+  display: grid;
+  gap: 9px;
+}
+
+.local-workorder-heading > div:first-child {
+  display: grid;
+  gap: 2px;
+}
+
+.local-workorder-heading b {
+  font-size: 12px;
+}
+
+.local-workorder-heading span {
+  color: #7c8a9d;
+  font-size: 9px;
+}
+
+.local-marker-actions {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 7px;
+}
+
+.local-marker-actions button,
+.local-workorder-save button {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 1px solid #dce4ef;
+  border-radius: 9px;
+  background: #fff;
+  color: #65758b;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.local-marker-actions button.active {
+  border-color: #91b9f4;
+  background: #eaf3ff;
+  color: #2563eb;
+}
+
+.local-workorder-block > label,
+.local-workorder-field {
+  display: grid;
+  gap: 5px;
+}
+
+.local-workorder-block > label > span,
+.local-workorder-field > span {
+  color: #69798e;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.local-workorder-block textarea,
+.local-workorder-block input {
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 9px;
+  border: 1px solid #dce4ee;
+  border-radius: 9px;
+  outline: none;
+  background: #fff;
+  color: #35465d;
+  font-size: 11px;
+}
+
+.local-workorder-block textarea {
+  min-height: 64px;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.local-workorder-save {
+  display: flex;
+  gap: 7px;
+}
+
+.local-workorder-save button:first-child {
+  flex: 1;
+  border-color: #2563eb;
+  background: #2563eb;
+  color: #fff;
+}
+
+.local-workorder-block > p {
+  margin: -2px 1px 0;
+  color: #3473c8;
+  font-size: 9px;
+}
+
+/* Neutral-black dark variants */
+
+.theme-dark .more-local-badge,
+.theme-dark .local-work-orders-count,
+.theme-dark .local-work-order-tabs button.active,
+.theme-dark .local-work-order-actions button.is-active,
+.theme-dark .local-marker-actions button.active,
+.theme-dark .local-data-message {
+  border-color: #30486d;
+  background: #17243a;
+  color: #8bb9ff;
+}
+
+.theme-dark .local-page-message {
+  background: #2a1e13;
+  color: #ffb96e;
+}
+
+.theme-dark .more-page-summary > div,
+.theme-dark .more-feature-card,
+.theme-dark .local-data-actions > button,
+.theme-dark .local-work-order-tabs button,
+.theme-dark .local-work-order-card,
+.theme-dark .local-work-order-actions button,
+.theme-dark .local-marker-actions button,
+.theme-dark .local-workorder-block textarea,
+.theme-dark .local-workorder-block input {
+  border-color: var(--dark-border);
+  background: var(--dark-surface);
+}
+
+.theme-dark .more-feature-primary {
+  border-color: var(--dark-border-strong);
+  background: var(--dark-raised);
+}
+
+.theme-dark .more-feature-icon {
+  background: var(--dark-active);
+  color: #8bb9ff;
+}
+
+.theme-dark .local-workorder-save button:first-child {
+  background: var(--dark-accent);
+  color: #fff;
+}
+
+.theme-dark .more-page-summary b,
+.theme-dark .more-feature-card,
+.theme-dark .local-data-actions b,
+.theme-dark .local-work-order-title b,
+.theme-dark .local-work-order-note p,
+.theme-dark .local-workorder-block textarea,
+.theme-dark .local-workorder-block input {
+  color: var(--dark-text);
+}
+
+.theme-dark .more-page-summary span,
+.theme-dark .more-section-heading p,
+.theme-dark .more-feature-copy small,
+.theme-dark .local-data-actions small,
+.theme-dark .local-work-order-title span,
+.theme-dark .local-work-order-address,
+.theme-dark .local-work-order-meta,
+.theme-dark .appointment-group > header span,
+.theme-dark .local-workorder-heading span,
+.theme-dark .local-workorder-block > label > span {
+  color: var(--dark-text-muted);
+}
+
+.theme-dark .local-work-order-tabs button span,
+.theme-dark .local-work-order-status,
+.theme-dark .local-work-order-note {
+  background: var(--dark-raised);
+  color: var(--dark-text-secondary);
+}
+
+.theme-dark .local-work-order-card,
+.theme-dark .local-work-order-note,
+.theme-dark .local-work-order-actions,
+.theme-dark .local-workorder-block {
+  border-color: var(--dark-border);
+}
+
+.theme-dark .local-workorder-block {
+  background: #0c0c0c;
+}
+
+.theme-dark .local-work-order-card.is-pinned,
+.theme-dark .local-marker-actions button.active {
+  border-color: #3b5f91;
+}
+
+.theme-dark .local-order-flags,
+.theme-dark .local-work-order-meta .local-work-order-appointment,
+.theme-dark .local-work-order-detail-label,
+.theme-dark .local-workorder-block > p {
+  color: #8bb9ff;
+}
+
+.theme-dark .order-favorite-badge {
+  color: #8493a8;
+}
+
+.theme-dark .order-favorite-badge.is-favorite {
+  color: #f3bd59;
+}

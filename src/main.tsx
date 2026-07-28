@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { LazyMotion, MotionConfig } from "framer-motion";
 import App from "./App";
+import "./styles/index.css";
 
 const loadMotionFeatures = () => import("./motionFeatures").then((module) => module.default);
 

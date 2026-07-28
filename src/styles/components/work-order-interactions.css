@@ -1,0 +1,366 @@
+.order-main {
+  touch-action: pan-y;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.order-card {
+  position: relative;
+  isolation: isolate;
+}
+
+.order-card.locally-pinned::after {
+  content: "";
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 3px;
+  background: #3b82f6;
+  pointer-events: none;
+}
+
+.order-swipe-shell {
+  border-radius: inherit;
+}
+
+.order-swipe-actions {
+  background: #3978cc;
+}
+
+.order-swipe-actions.is-favorite {
+  background: #ba7a18;
+}
+
+.order-swipe-action {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  opacity: .72;
+  transform: scale(.94);
+  transition: opacity .12s ease,
+    transform .12s ease;
+}
+
+.order-card.swipe-note-visible .order-swipe-action-note,
+.order-card.swipe-favorite-visible .order-swipe-action-favorite {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.order-swipe-content {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+}
+
+.order-card.is-swiping .order-swipe-content {
+  cursor: grabbing;
+}
+
+.order-list.is-floor-grouped {
+  gap: 7px;
+  padding-top: 0;
+}
+
+.order-floor-group-controls {
+  position: sticky;
+  z-index: 4;
+  top: 0;
+  min-width: 0;
+  min-height: 25px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 1px;
+  background: transparent;
+}
+
+.order-floor-group-controls .order-floor-groups-toggle-all {
+  height: 25px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: 0;
+  border-radius: 999px;
+  background: #eaf2fd;
+  color: #35689f;
+  padding: 0 9px 0 7px;
+  font-size: 9px;
+  font-weight: 800;
+  touch-action: manipulation;
+}
+
+.order-floor-groups-toggle-all .icon {
+  flex: none;
+}
+
+.order-floor-group {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.order-floor-group-toggle {
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 8px 0 9px;
+  border: 1px solid #dce5f0;
+  border-radius: 7px;
+  background: #edf3fa;
+  color: #496078;
+  text-align: left;
+  touch-action: manipulation;
+}
+
+.order-floor-group-title {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 10px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.order-floor-group-summary {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #71849a;
+}
+
+.order-floor-group-count {
+  font-size: 9px;
+  font-weight: 750;
+}
+
+.order-floor-group-summary .icon {
+  transition: transform .16s ease;
+}
+
+.order-floor-group.is-expanded .order-floor-group-summary .icon {
+  transform: rotate(90deg);
+}
+
+.order-floor-group-items {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.order-floor-group-items.is-entering {
+  animation: order-floor-group-items-enter .12s ease-out;
+}
+
+@keyframes order-floor-group-items-enter {
+  from {
+    opacity: .72;
+    transform: translateY(-2px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.order-card.pin-menu-open {
+  z-index: auto;
+  overflow: hidden;
+}
+
+.order-pin-popover {
+  position: absolute;
+  z-index: 3;
+  right: 10px;
+  top: calc(100% - 3px);
+  filter: drop-shadow(0 7px 14px rgba(24, 45, 76, .2));
+}
+
+.order-pin-popover-backdrop {
+  touch-action: none;
+}
+
+.order-pin-popover-fixed {
+  z-index: 1;
+}
+
+.order-pin-popover-fixed.is-above::before {
+  top: auto;
+  bottom: -5px;
+}
+
+.order-pin-popover-fixed.is-below::before {
+  top: -5px;
+  bottom: auto;
+}
+
+.order-pin-popover::before {
+  content: "";
+  position: absolute;
+  top: -5px;
+  left: var(--pin-arrow-left, calc(50% - 5px));
+  width: 10px;
+  height: 10px;
+  transform: rotate(45deg);
+  background: #2c68bd;
+}
+
+.order-pin-popover button {
+  position: relative;
+  z-index: 1;
+  min-width: 112px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 0;
+  border-radius: 9px;
+  background: #2c68bd;
+  color: #fff;
+  padding: 0 11px;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.order-note-backdrop {
+  position: fixed;
+  z-index: 30;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, .52);
+}
+
+.order-note-dialog {
+  width: min(100%, 340px);
+  border-radius: 16px;
+  background: #fff;
+  padding: 17px;
+  box-shadow: 0 18px 55px rgba(15, 23, 42, .25);
+}
+
+.order-note-dialog h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.order-note-dialog > p {
+  margin: 5px 0 11px;
+  color: #74869d;
+  font-size: 11px;
+}
+
+.order-note-dialog textarea {
+  width: 100%;
+  min-height: 92px;
+  resize: vertical;
+  border: 1px solid #d9e4f2;
+  border-radius: 10px;
+  outline: 0;
+  padding: 9px;
+  color: #344962;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.order-note-dialog textarea:focus {
+  border-color: #77a8ef;
+  box-shadow: 0 0 0 3px rgba(55, 115, 208, .12);
+}
+
+.order-note-dialog small {
+  display: block;
+  margin-top: 6px;
+  color: #be4d4d;
+  font-size: 10px;
+}
+
+.order-note-dialog > div {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+  margin-top: 13px;
+}
+
+.order-note-dialog button {
+  height: 38px;
+  border: 0;
+  border-radius: 10px;
+  background: #edf1f7;
+  color: #586b85;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.order-note-dialog button:last-child {
+  background: #2d73da;
+  color: #fff;
+}
+
+.theme-dark .order-pin-popover::before,
+.theme-dark .order-pin-popover button {
+  background: #315f9c;
+}
+
+.theme-dark .order-floor-group-toggle {
+  border-color: #303f53;
+  background: #202b3a;
+  color: #d1dce9;
+}
+
+.theme-dark .order-floor-group-controls {
+  background: transparent;
+}
+
+.theme-dark .order-floor-group-controls .order-floor-groups-toggle-all {
+  background: #25374d;
+  color: #c8dcf4;
+}
+
+.theme-dark .order-floor-group-summary {
+  color: #91a2b8;
+}
+
+.theme-dark .order-note-dialog {
+  background: #1c293d;
+}
+
+.theme-dark .order-note-dialog h3 {
+  color: #f1f6ff;
+}
+
+.theme-dark .order-note-dialog > p {
+  color: #afc0d5;
+}
+
+.theme-dark .order-note-dialog textarea {
+  border-color: #354b68;
+  background: #142238;
+  color: #e2ecfa;
+}
+
+.theme-dark .order-note-dialog button {
+  background: #31415a;
+  color: #e0ebfa;
+}
+
+.theme-dark .order-note-dialog button:last-child {
+  background: #3f7bd1;
+  color: #fff;
+}

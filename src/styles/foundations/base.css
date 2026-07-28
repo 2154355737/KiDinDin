@@ -1,0 +1,86 @@
+/* 全局基础规则与控件默认行为。 */
+:root {
+  font-family: Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  color: #172135;
+  background: #e9eef7;
+  font-synthesis: none;
+}
+
+html {
+  line-height: 1.5;
+  -webkit-text-size-adjust: 100%;
+}
+
+html, body, #root {
+  min-height: 100%;
+  margin: 0;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+html::-webkit-scrollbar, body::-webkit-scrollbar, #root::-webkit-scrollbar {
+  display: none;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+h1, h2, h3, h4, h5, h6, p {
+  margin: 0;
+}
+
+button, input, textarea, select {
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+}
+
+button {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:disabled {
+  cursor: default;
+}
+
+img, svg {
+  display: block;
+}
+
+img, video {
+  max-width: 100%;
+  height: auto;
+}
+
+.primary-button,.secondary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  padding: 0 16px;
+  cursor: pointer;
+  transition: transform .12s ease;
+}
+
+.primary-button:disabled,.secondary-button:disabled {
+  opacity: .55;
+  cursor: default;
+  pointer-events: none;
+}
+
+.primary-button:focus-visible,.secondary-button:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.primary-button:active:not(:disabled),.secondary-button:active:not(:disabled) {
+  transform: scale(.98);
+}

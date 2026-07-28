@@ -1,0 +1,119 @@
+/* 首页筛选状态与固定操作定位 */
+
+.filter-button.has-active-filters {
+  color: #2563eb;
+}
+
+.filter-count {
+  position: absolute;
+  top: 3px;
+  right: 2px;
+  min-width: 17px;
+  height: 17px;
+  display: grid;
+  place-items: center;
+  padding: 0 4px;
+  border: 2px solid #f7f9fc;
+  border-radius: 999px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 8px;
+  font-weight: 850;
+  line-height: 1;
+}
+
+.active-filter-summary {
+  min-height: 29px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: -1px 0 6px;
+  padding: 3px 4px 3px 9px;
+  border: 1px solid #d9e8fb;
+  border-radius: 9px;
+  background: #eef6ff;
+}
+
+.active-filter-summary button {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: #39648f;
+  font-size: 10px;
+  font-weight: 700;
+  text-align: left;
+}
+
+.active-filter-summary button:first-child {
+  flex: 1;
+}
+
+.active-filter-summary button:last-child {
+  flex: none;
+  padding: 5px 6px;
+  color: #1767c9;
+  font-weight: 800;
+}
+
+.filter-panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.filter-panel .filter-reset-button {
+  width: auto;
+  height: 32px;
+  flex: none;
+  padding: 0 8px;
+  border: 1px solid #dbe5f1;
+  border-radius: 9px;
+  background: #f4f7fb;
+  color: #52708f;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.filter-panel .filter-reset-button:disabled {
+  color: #a0adbc;
+  opacity: .62;
+}
+
+.phone-frame.screen-select .submit-fab {
+  bottom: max(16px, env(safe-area-inset-bottom));
+}
+
+.run-actions {
+  left: 50%;
+  max-width: 398px;
+  transform: translateX(-50%);
+}
+
+.theme-dark .filter-button.has-active-filters {
+  color: #79afff;
+}
+
+.theme-dark .filter-count {
+  border-color: #171717;
+  background: #4f8cff;
+}
+
+.theme-dark .active-filter-summary {
+  border-color: #2f4767;
+  background: #1b2b42;
+}
+
+.theme-dark .active-filter-summary button {
+  color: #b5c9e2;
+}
+
+.theme-dark .active-filter-summary button:last-child {
+  color: #82b7ff;
+}
+
+.theme-dark .filter-panel .filter-reset-button {
+  border-color: var(--dark-border-strong);
+  background: #202020;
+  color: var(--dark-text-secondary);
+}

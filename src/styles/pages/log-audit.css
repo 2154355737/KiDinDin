@@ -1,0 +1,372 @@
+/* 流转审核 */
+
+.audit-subheader {
+  gap: 6px;
+}
+
+.audit-subheader h1 {
+  flex: 1;
+  text-align: center;
+}
+
+.audit-overview {
+  margin: 5px 0 12px;
+  overflow: hidden;
+  border: 1px solid #cce6da;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #edf7f1, #e1f3ea);
+  padding-bottom: 12px;
+}
+
+.audit-overview.has-retry {
+  padding-bottom: 0;
+}
+
+.audit-hero {
+  padding: 17px 17px 12px;
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.audit-hero span, .audit-hero p {
+  grid-column: 1 / -1;
+  color: #557466;
+  font-size: 12px;
+}
+
+.audit-hero strong {
+  color: #168b57;
+  font-size: 34px;
+  line-height: 1;
+}
+
+.audit-hero b {
+  font-size: 14px;
+}
+
+.audit-hero p {
+  margin: 6px 0 0;
+  line-height: 1.55;
+  font-size: 11px;
+}
+
+.audit-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border-top: 1px solid #cce6da;
+  padding: 13px 4px;
+}
+
+.audit-summary div {
+  display: grid;
+  gap: 3px;
+  text-align: center;
+  border-right: 1px solid #e8edf3;
+}
+
+.audit-summary div:last-child {
+  border: 0;
+}
+
+.audit-summary b {
+  color: #168b57;
+  font-size: 20px;
+}
+
+.audit-summary span {
+  color: #75869e;
+  font-size: 10px;
+}
+
+.audit-action-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  margin: 12px 12px 0;
+}
+
+.audit-action-row.has-retry {
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.audit-start-button {
+  width: 100%;
+  min-height: 42px;
+  margin: 0;
+  border: 0;
+  border-radius: 12px;
+  background: #2563eb;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.audit-start-button:disabled {
+  background: #b7c4d6;
+}
+
+.audit-message {
+  margin: 9px 12px 0;
+  color: #6d8198;
+  font-size: 11px;
+  text-align: center;
+}
+
+.audit-retry-panel {
+  margin-top: 12px;
+  border-top: 1px solid #cce6da;
+  padding: 12px 16px 16px;
+  display: grid;
+  gap: 10px;
+}
+
+.audit-retry-panel > div {
+  display: grid;
+  gap: 3px;
+}
+
+.audit-retry-panel b {
+  color: #8f5618;
+  font-size: 13px;
+}
+
+.audit-retry-panel p {
+  margin: 0;
+  color: #836b4c;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.audit-interval {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #7a6549;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.audit-interval input {
+  width: 45px;
+  height: 29px;
+  border: 1px solid #e5cda8;
+  border-radius: 8px;
+  background: #fff;
+  color: #5e492f;
+  text-align: center;
+  font-size: 12px;
+  outline: 0;
+}
+
+.audit-interval i {
+  color: #a3835d;
+  font-style: normal;
+}
+
+.audit-interval em {
+  color: #90724f;
+  font-size: 10px;
+  font-style: normal;
+  white-space: nowrap;
+}
+
+.audit-retry-button {
+  min-height: 42px;
+  border: 0;
+  border-radius: 12px;
+  background: #e98224;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.audit-retry-button:disabled {
+  background: #c7cdd6;
+}
+
+.audit-retry-confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(15 23 42 / 52%);
+}
+
+.audit-retry-confirm-dialog {
+  width: min(100%, 340px);
+  border-radius: 16px;
+  background: #fff;
+  padding: 18px;
+  box-shadow: 0 18px 55px rgb(15 23 42 / 25%);
+}
+
+.audit-retry-confirm-dialog h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.audit-retry-confirm-dialog p {
+  margin: 0;
+  color: #657991;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.audit-retry-confirm-dialog > div {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+  margin-top: 17px;
+}
+
+.audit-retry-confirm-dialog button {
+  height: 38px;
+  border: 0;
+  border-radius: 10px;
+  background: #edf1f7;
+  color: #586b85;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.audit-retry-confirm-dialog button:last-child {
+  background: #e98224;
+  color: #fff;
+}
+
+.audit-record-list {
+  max-height: calc(100dvh - 408px);
+  min-height: 90px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.audit-record-list::-webkit-scrollbar {
+  display: none;
+}
+
+.audit-record-list article small {
+  color: #b5651d;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.audit-status {
+  flex: none;
+  border-radius: 99px;
+  padding: 5px 7px;
+  background: #edf1f6;
+  color: #718096;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.audit-status.checking {
+  background: #e7f0ff;
+  color: #246bd2;
+}
+
+.audit-status.present {
+  background: #e3f8ee;
+  color: #168b57;
+}
+
+.audit-status.missing, .audit-status.error {
+  background: #fff0df;
+  color: #bd6414;
+}
+
+.theme-dark .audit-overview {
+  border-color: #315b4c;
+  background: linear-gradient(135deg, #1c4135, #1a342e);
+}
+
+.theme-dark .audit-hero span, .theme-dark .audit-hero p {
+  color: #a8c7b8;
+}
+
+.theme-dark .audit-summary {
+  border-color: #315b4c;
+}
+
+.theme-dark .audit-summary div {
+  border-color: #315b4c;
+}
+
+.theme-dark .audit-summary span, .theme-dark .audit-message {
+  color: #9baec6;
+}
+
+.theme-dark .audit-retry-panel {
+  border-color: #315b4c;
+}
+
+.theme-dark .audit-retry-panel b {
+  color: #ffc67c;
+}
+
+.theme-dark .audit-retry-panel p, .theme-dark .audit-interval {
+  color: #d6c5aa;
+}
+
+.theme-dark .audit-interval input {
+  border-color: #5e482d;
+  background: #211c16;
+  color: #f1d8b1;
+}
+
+.theme-dark .audit-interval i, .theme-dark .audit-interval em {
+  color: #c9a978;
+}
+
+.theme-dark .audit-retry-confirm-dialog {
+  background: #1c293d;
+}
+
+.theme-dark .audit-retry-confirm-dialog h3 {
+  color: #f1f6ff;
+}
+
+.theme-dark .audit-retry-confirm-dialog p {
+  color: #b7c6dc;
+}
+
+.theme-dark .audit-retry-confirm-dialog button {
+  background: #31415a;
+  color: #e0ebfa;
+}
+
+.theme-dark .audit-status {
+  background: #2b394f;
+  color: #b5c5da;
+}
+
+.theme-dark .audit-status.checking {
+  background: #213d64;
+  color: #8bbcff;
+}
+
+.theme-dark .audit-status.present {
+  background: #1d4439;
+  color: #74dca9;
+}
+
+.theme-dark .audit-status.missing, .theme-dark .audit-status.error {
+  background: #4a3424;
+  color: #ffc17d;
+}

@@ -132,9 +132,35 @@ const DEFAULT_OPERATOR_NAME_STORAGE_KEY = "kidindin.default-operator-name";
 const AUTO_LOGIN_HISTORY_STORAGE_KEY = "kidindin.auto-login-history-id";
 const AUTO_REFRESH_STORAGE_PREFIX = "kidindin.auto-refresh-at:";
 const PENDING_LOG_RETRY_STORAGE_PREFIX = "kidindin.pending-log-retries:";
+const HOME_FLOOR_GROUPING_STORAGE_KEY =
+  "kidindin.home-floor-grouping-state.v1";
 const AUTO_LOGIN_DISABLED = "disabled";
 const AUTO_REFRESH_COOLDOWN_MS = 3 * 60 * 60_000;
 const TOKEN_EXPIRY_WARNING_MS = 30 * 60_000;
+
+type HomeFloorGroupingState = Record<string, string[]>;
+
+function loadHomeFloorGroupingState(): HomeFloorGroupingState {
+  try {
+    const raw = localStorage.getItem(HOME_FLOOR_GROUPING_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+      return {};
+
+    return Object.fromEntries(
+      Object.entries(parsed)
+        .filter(
+          (entry): entry is [string, string[]] =>
+            Array.isArray(entry[1]) &&
+            entry[1].every((key) => typeof key === "string"),
+        )
+        .map(([key, values]) => [key, Array.from(new Set(values)).sort()]),
+    );
+  } catch {
+    return {};
+  }
+}
 
 function normalizeExpiryTimestamp(expiresAt: number | null | undefined) {
   if (!expiresAt || !Number.isFinite(expiresAt)) return null;
@@ -603,6 +629,8 @@ export default function App() {
     "building" | "unit" | "floor" | null
   >(null);
   const [selectedDate, setSelectedDate] = useState(today());
+  const [homeFloorGroupingState, setHomeFloorGroupingState] =
+    useState<HomeFloorGroupingState>(loadHomeFloorGroupingState);
   const [orders, setOrders] = useState<WorkOrder[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [batchOrderIds, setBatchOrderIds] = useState<string[]>([]);
@@ -675,6 +703,31 @@ export default function App() {
   const [logAuditMessage, setLogAuditMessage] = useState("");
 
   const loggedIn = Boolean(auth?.authenticated);
+  const homeFloorGroupingStateKey = `${localAccountKey ?? "unidentified"}:${selectedDate}`;
+  const collapsedHomeFloorGroupKeys =
+    homeFloorGroupingState[homeFloorGroupingStateKey] ?? [];
+  const updateCollapsedHomeFloorGroupKeys = useCallback(
+    (keys: string[]) => {
+      const normalizedKeys = Array.from(
+        new Set(keys.filter((key) => key.trim())),
+      ).sort();
+      setHomeFloorGroupingState((current) => {
+        const existing = current[homeFloorGroupingStateKey] ?? [];
+        if (
+          existing.length === normalizedKeys.length &&
+          existing.every((key, index) => key === normalizedKeys[index])
+        )
+          return current;
+
+        const next = { ...current };
+        if (normalizedKeys.length)
+          next[homeFloorGroupingStateKey] = normalizedKeys;
+        else delete next[homeFloorGroupingStateKey];
+        return next;
+      });
+    },
+    [homeFloorGroupingStateKey],
+  );
   const changeSelectedDate = useCallback(
     (value: string) => {
       if (value === selectedDate) return;
@@ -1150,6 +1203,16 @@ export default function App() {
       active = false;
     };
   }, []);
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        HOME_FLOOR_GROUPING_STORAGE_KEY,
+        JSON.stringify(homeFloorGroupingState),
+      );
+    } catch {
+      // The in-memory state still preserves the UI while this app session is open.
+    }
+  }, [homeFloorGroupingState]);
   useEffect(() => {
     if (!loggedIn || !localAccountKey) {
       setLocalWorkOrders([]);
@@ -2302,6 +2365,7 @@ export default function App() {
             query={query}
             date={selectedDate}
             localMetaById={localMetaById}
+            collapsedFloorGroupKeys={collapsedHomeFloorGroupKeys}
             activeFilterCount={activeFilterCount}
             prioritizePinned={sortField === "original"}
             loading={loadingOrders}
@@ -2316,6 +2380,9 @@ export default function App() {
               setFloorFilter("all");
             }}
             onDetail={openCurrentOrderDetail}
+            onCollapsedFloorGroupKeysChange={
+              updateCollapsedHomeFloorGroupKeys
+            }
             onToggleFavorite={(order) =>
               persistLocalWorkOrder(order, {
                 favorite: !localMetaById[order.woHeaderId]?.favorite,

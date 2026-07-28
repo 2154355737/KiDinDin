@@ -1,0 +1,380 @@
+/* 今日数据统计 */
+
+.stats-topbar {
+  margin-bottom: 11px;
+}
+
+.daily-overview {
+  position: relative;
+  overflow: hidden;
+  margin: 0 0 11px;
+  border-radius: 18px;
+  padding: 17px 16px 12px;
+  background: linear-gradient(135deg,#1d6fd9,#4c9dff);
+  color: #fff;
+  box-shadow: 0 10px 22px rgba(37,99,235,.2);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 12px;
+}
+
+.daily-overview::after {
+  content: "";
+  position: absolute;
+  width: 150px;
+  height: 150px;
+  border: 24px solid rgba(255,255,255,.08);
+  border-radius: 50%;
+  right: -65px;
+  top: -76px;
+  pointer-events: none;
+}
+
+.overview-copy {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 2px;
+}
+
+.overview-copy>span {
+  color: #dceaff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.overview-copy strong {
+  font-size: 37px;
+  line-height: 1.05;
+  letter-spacing: -1px;
+}
+
+.overview-copy strong small {
+  font-size: 17px;
+  margin-left: 2px;
+  letter-spacing: 0;
+}
+
+.overview-copy p {
+  margin: 1px 0 0;
+  color: #dbeaff;
+  font-size: 11px;
+}
+
+.rate-ring {
+  position: relative;
+  z-index: 1;
+  width: 67px;
+  height: 67px;
+  border-radius: 50%;
+  background: conic-gradient(from -90deg,#fff 0 var(--rate),rgba(255,255,255,.24) var(--rate) 360deg);
+  padding: 6px;
+  color: #fff;
+}
+
+.rate-ring-content {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: #327fdf;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 2px;
+  line-height: 1;
+}
+
+.rate-ring-content b {
+  font-size: 11px;
+}
+
+.overview-foot {
+  grid-column: 1/-1;
+  position: relative;
+  z-index: 1;
+  margin-top: 6px;
+  padding-top: 9px;
+  border-top: 1px solid rgba(255,255,255,.22);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #f3f8ff;
+  font-size: 11px;
+}
+
+.stats-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(2,1fr);
+  gap: 8px;
+  margin-bottom: 11px;
+}
+
+.stats-kpi-grid article {
+  min-height: 68px;
+  border: 1px solid #e4eaf2;
+  border-radius: 14px;
+  background: #fff;
+  padding: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 2px 8px rgba(32,54,87,.025);
+}
+
+.kpi-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+.kpi-icon.total {
+  color: #276ed0;
+  background: #e9f2ff;
+}
+
+.kpi-icon.household {
+  color: #168b57;
+  background: #e3f8ee;
+}
+
+.kpi-icon.success {
+  color: #7b5ad8;
+  background: #efeaff;
+}
+
+.kpi-icon.alert {
+  color: #c66717;
+  background: #fff0dc;
+}
+
+.kpi-icon.neutral {
+  color: #73839a;
+  background: #edf1f6;
+}
+
+.stats-kpi-grid article>div {
+  display: grid;
+  gap: 1px;
+}
+
+.stats-kpi-grid b {
+  color: #263a55;
+  font-size: 19px;
+  line-height: 1.05;
+}
+
+.stats-kpi-grid span:not(.kpi-icon) {
+  color: #7b8ba0;
+  font-size: 10px;
+}
+
+.stats-section {
+  border: 1px solid #e4eaf2;
+  border-radius: 15px;
+  background: #fff;
+  padding: 13px 12px;
+  margin: 0 0 11px;
+}
+
+.stats-section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.stats-section-heading>div {
+  display: grid;
+  gap: 2px;
+}
+
+.stats-section-heading span {
+  color: #30445f;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.stats-section-heading p {
+  margin: 0;
+  color: #8492a5;
+  font-size: 10px;
+}
+
+.stats-section-heading>b {
+  color: #246bd2;
+  font-size: 13px;
+}
+
+.stage-progress {
+  height: 8px;
+  border-radius: 99px;
+  background: #edf1f5;
+  overflow: hidden;
+  display: flex;
+  margin: 13px 0 11px;
+}
+
+.stage-progress i {
+  height: 100%;
+  min-width: 0;
+}
+
+.stage-progress .pending,.stage-list .pending {
+  background: #f2b84b;
+}
+
+.stage-progress .processing,.stage-list .processing {
+  background: #5b9bf2;
+}
+
+.stage-progress .completed,.stage-list .completed {
+  background: #8a75df;
+}
+
+.stage-progress .household,.stage-list .household {
+  background: #2ab477;
+}
+
+.stage-list {
+  display: grid;
+  grid-template-columns: repeat(2,1fr);
+  gap: 9px 14px;
+}
+
+.stage-list>div {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 7px 1fr auto auto;
+  align-items: center;
+  gap: 5px;
+}
+
+.stage-list i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.stage-list span {
+  color: #687b94;
+  font-size: 10px;
+}
+
+.stage-list b {
+  color: #344861;
+  font-size: 11px;
+}
+
+.stage-list small {
+  color: #94a2b3;
+  font-size: 9px;
+  min-width: 24px;
+  text-align: right;
+}
+
+.insight-card {
+  padding-bottom: 10px;
+}
+
+.insight-card .stats-section-heading>svg {
+  color: #3e81dd;
+  margin-top: 1px;
+}
+
+.insight-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 11px;
+}
+
+.insight-list p {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  margin: 0;
+  color: #72839a;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.insight-list b {
+  color: #246bd2;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.section-title small {
+  color: #8b9aad;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.stats-record-list {
+  max-height: calc(100dvh - 566px);
+  min-height: 72px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.stats-record-list::-webkit-scrollbar {
+  display: none;
+}
+
+.stats-record-list .empty-hint {
+  grid-column: 1/-1;
+}
+
+.theme-dark .stats-kpi-grid article,.theme-dark .stats-section {
+  background: #182235;
+  border-color: #293950;
+}
+
+.theme-dark .stats-kpi-grid b,.theme-dark .stats-section-heading span {
+  color: #e0eafa;
+}
+
+.theme-dark .stats-kpi-grid span:not(.kpi-icon),.theme-dark .stats-section-heading p,.theme-dark .stage-list span,.theme-dark .insight-list p {
+  color: #9baec6;
+}
+
+.theme-dark .stage-progress {
+  background: #28374e;
+}
+
+.theme-dark .stage-list b {
+  color: #dbe7f7;
+}
+
+.theme-dark .stage-list small {
+  color: #8295ae;
+}
+
+.theme-dark .kpi-icon.total {
+  background: #213d64;
+  color: #8bbcff;
+}
+
+.theme-dark .kpi-icon.household {
+  background: #1d4439;
+  color: #74dca9;
+}
+
+.theme-dark .kpi-icon.success {
+  background: #392f5c;
+  color: #b7a7ff;
+}
+
+.theme-dark .kpi-icon.alert {
+  background: #4a3424;
+  color: #ffc17d;
+}
+
+.theme-dark .kpi-icon.neutral {
+  background: #2b394f;
+  color: #b5c5da;
+}

@@ -1,0 +1,100 @@
+/* Shared subheader alignment */
+
+.subheader-back-placeholder {
+  width: 44px;
+  height: 44px;
+  flex: none;
+}
+
+/* Bottom navigation */
+
+.bottom-nav {
+  position: fixed;
+  z-index: 5;
+  bottom: var(--bottom-nav-offset);
+  left: 50%;
+  width: min(calc(100% - 28px), 402px);
+  height: var(--bottom-nav-height);
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: center;
+  gap: 3px;
+  padding: 5px;
+  transform: translateX(-50%);
+  overflow: hidden;
+  border: 1px solid rgb(255 255 255 / 78%);
+  border-radius: 28px;
+  background: #f3f6faf5;
+  box-shadow: 0 10px 26px rgb(25 41 75 / 15%),
+    0 2px 7px rgb(25 41 75 / 8%);
+}
+
+.bottom-nav button {
+  width: 100%;
+  min-width: 0;
+  height: 44px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 2px 8px;
+  border: 0;
+  border-radius: 18px;
+  background: transparent;
+  color: #718096;
+  font-size: 10px;
+  line-height: 1;
+  touch-action: manipulation;
+  transition: color .18s ease,
+    transform .12s ease;
+}
+
+.bottom-nav button.active {
+  color: #1769d2;
+  font-weight: 800;
+}
+
+.bottom-nav button.active .icon {
+  stroke-width: 2.4;
+}
+
+.bottom-nav button:active {
+  transform: scale(.96);
+}
+
+.bottom-nav button:focus-visible {
+  outline: 2px solid #5c9df4;
+  outline-offset: -3px;
+}
+
+.theme-dark .bottom-nav {
+  border-color: rgb(255 255 255 / 15%);
+  background: #1b2028f5;
+  box-shadow: 0 12px 28px rgb(0 0 0 / 42%),
+    0 2px 8px rgb(0 0 0 / 28%);
+}
+
+.theme-dark .bottom-nav button {
+  color: #929cab;
+}
+
+.theme-dark .bottom-nav button.active {
+  color: #79afff;
+}
+
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .bottom-nav {
+    background: rgb(243 247 252 / 66%);
+    -webkit-backdrop-filter: blur(22px) saturate(170%);
+    backdrop-filter: blur(22px) saturate(170%);
+  }
+
+  .theme-dark .bottom-nav {
+    background: rgb(27 32 40 / 70%);
+  }
+}
+
+.submit-fab:active {
+  transform: none;
+}

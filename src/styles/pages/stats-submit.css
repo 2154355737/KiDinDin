@@ -1,0 +1,148 @@
+.stats-hero,.submit-hero {
+  margin: 5px 0 12px;
+  border-radius: 16px;
+  padding: 16px;
+  background: linear-gradient(135deg,#e7f0ff,#dceaff);
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.stats-hero span,.stats-hero p,.submit-hero span,.submit-hero p {
+  grid-column: 1/-1;
+  color: #5a6e8c;
+  font-size: 12px;
+}
+
+.stats-hero strong,.submit-hero strong {
+  color: #2563eb;
+  font-size: 34px;
+  line-height: 1;
+}
+
+.stats-hero b,.submit-hero b {
+  font-size: 14px;
+}
+
+.stats-hero p,.submit-hero p {
+  margin: 6px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3,1fr);
+  border: 1px solid #e5eaf2;
+  background: #fff;
+  border-radius: 13px;
+  padding: 12px 3px;
+}
+
+.stats-grid>div {
+  display: grid;
+  gap: 3px;
+  text-align: center;
+  border-right: 1px solid #e7edf4;
+}
+
+.stats-grid>div:last-child {
+  border: 0;
+}
+
+.stats-grid b {
+  color: #246bd2;
+  font-size: 20px;
+}
+
+.stats-grid span {
+  color: #75859a;
+  font-size: 10px;
+}
+
+.section-title {
+  font-size: 14px;
+  margin: 17px 0 9px;
+}
+
+.stats-hero + .stats-grid + .section-title + .record-list {
+  max-height: calc(100dvh - 350px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.stats-hero + .stats-grid + .section-title + .record-list::-webkit-scrollbar {
+  display: none;
+}
+
+.empty-hint {
+  color: #8392a5;
+  text-align: center;
+  font-size: 12px;
+  padding: 24px 0;
+}
+
+.submit-summary + .order-list {
+  flex: 1;
+  min-height: 0;
+}
+
+.submit-fab {
+  position: fixed;
+  z-index: 6;
+  right: max(16px,calc((100% - 430px)/2 + 16px));
+  bottom: calc(78px + env(safe-area-inset-bottom));
+  width: 56px;
+  height: 56px;
+  border: 0;
+  border-radius: 50%;
+  background: #2563eb;
+  color: #fff;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 8px 20px rgba(37,99,235,.35);
+}
+
+.submit-fab:active {
+  transform: scale(.94);
+}
+
+.submit-fab span {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 10px;
+  background: #f97316;
+  border: 2px solid #f7f9fc;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 16px;
+}
+
+.theme-dark .stats-grid {
+  background: #182235;
+  border-color: #293950;
+}
+
+.theme-dark .stats-grid>div {
+  border-color: #293950;
+}
+
+.theme-dark .stats-hero,.theme-dark .submit-hero {
+  background: linear-gradient(135deg,#1b3762,#1a2a48);
+}
+
+.theme-dark .submit-fab {
+  background: #4f8cff;
+}
+
+.theme-dark .submit-fab span {
+  border-color: #121a2a;
+}

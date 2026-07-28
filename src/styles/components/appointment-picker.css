@@ -1,0 +1,409 @@
+/* Android-safe appointment date and time picker */
+
+.appointment-picker-trigger {
+  width: 100%;
+  min-height: 44px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 0 11px;
+  border: 1px solid #dce4ee;
+  border-radius: 10px;
+  background: #fff;
+  color: #35465d;
+  text-align: left;
+  touch-action: manipulation;
+}
+
+.appointment-picker-trigger::after {
+  content: "选择";
+  color: #3473c8;
+  font-size: 9px;
+  font-weight: 750;
+}
+
+.appointment-picker-trigger > span {
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.appointment-picker-trigger:disabled {
+  opacity: .58;
+}
+
+.appointment-picker-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-top: max(18px, env(safe-area-inset-top));
+  background: rgb(15 23 42 / 52%);
+  overscroll-behavior: none;
+}
+
+.appointment-picker-sheet {
+  width: min(100%, 430px);
+  max-height: calc(100dvh - max(18px, env(safe-area-inset-top)));
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 8px 14px max(14px, env(safe-area-inset-bottom));
+  border-radius: 22px 22px 0 0;
+  background: #fff;
+  box-shadow: 0 -18px 45px rgb(15 23 42 / 20%);
+  animation: slide-up .18s ease-out;
+  scrollbar-width: none;
+  touch-action: pan-y;
+}
+
+.appointment-picker-sheet::-webkit-scrollbar,
+.appointment-picker-time-wheel::-webkit-scrollbar {
+  display: none;
+}
+
+.appointment-picker-handle {
+  width: 38px;
+  height: 4px;
+  margin: 0 auto 7px;
+  border-radius: 999px;
+  background: #d4dce8;
+}
+
+.appointment-picker-header {
+  min-height: 54px;
+  display: grid !important;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: 6px;
+}
+
+.appointment-picker-header > button {
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 13px;
+  background: transparent;
+  color: #4f6179;
+  font-size: 28px;
+  line-height: 1;
+  touch-action: manipulation;
+}
+
+.appointment-picker-header > button:active {
+  background: #edf3fb;
+}
+
+.appointment-picker-header > div {
+  min-width: 0;
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  text-align: center;
+}
+
+.appointment-picker-header b {
+  font-size: 14px;
+}
+
+.appointment-picker-header span {
+  color: #718198;
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.appointment-picker-weekdays,
+.appointment-picker-calendar {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  text-align: center;
+}
+
+.appointment-picker-weekdays {
+  padding: 5px 0 3px;
+  color: #8291a5;
+  font-size: 9px;
+}
+
+.appointment-picker-calendar {
+  gap: 2px 0;
+}
+
+.appointment-picker-calendar button {
+  width: min(44px, 100%);
+  height: 44px;
+  justify-self: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #293a51;
+  font-size: 12px;
+  touch-action: manipulation;
+}
+
+.appointment-picker-calendar button.is-outside {
+  color: #b5c0ce;
+}
+
+.appointment-picker-calendar button.is-today:not(.is-selected) {
+  box-shadow: inset 0 0 0 1px #8bb7f5;
+  color: #2563eb;
+  font-weight: 750;
+}
+
+.appointment-picker-calendar button.is-selected {
+  background: #2563eb;
+  color: #fff;
+  font-weight: 800;
+}
+
+.appointment-picker-time {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 16px minmax(0, 1fr);
+  align-items: end;
+  gap: 9px;
+  margin-top: 10px;
+  padding: 10px 4px 12px;
+  border-top: 1px solid #e8edf3;
+}
+
+.appointment-picker-time-group {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.appointment-picker-time-group > span {
+  color: #6c7c91;
+  font-size: 10px;
+  font-weight: 750;
+  text-align: center;
+}
+
+.appointment-picker-time-separator {
+  height: 132px;
+  display: grid;
+  place-items: center;
+  color: #4f6179;
+  font-size: 21px;
+  font-weight: 800;
+}
+
+.appointment-picker-time-wheel-frame {
+  position: relative;
+  height: 132px;
+  overflow: hidden;
+  border: 1px solid #e0e6ef;
+  border-radius: 14px;
+  background: #f7f9fc;
+}
+
+.appointment-picker-time-wheel-frame::before,
+.appointment-picker-time-wheel-frame::after {
+  content: "";
+  position: absolute;
+  z-index: 3;
+  left: 0;
+  right: 0;
+  height: 44px;
+  pointer-events: none;
+}
+
+.appointment-picker-time-wheel-frame::before {
+  top: 0;
+  background: linear-gradient(#f7f9fc 20%, rgb(247 249 252 / 18%));
+}
+
+.appointment-picker-time-wheel-frame::after {
+  bottom: 0;
+  background: linear-gradient(rgb(247 249 252 / 18%), #f7f9fc 80%);
+}
+
+.appointment-picker-time-wheel-selection {
+  position: absolute;
+  z-index: 1;
+  top: 44px;
+  left: 4px;
+  right: 4px;
+  height: 44px;
+  border: 1px solid #76a8ef;
+  border-radius: 10px;
+  background: #e8f2ff;
+  pointer-events: none;
+}
+
+.appointment-picker-time-wheel {
+  position: relative;
+  z-index: 2;
+  height: 132px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  padding: 44px 0;
+  outline: 0;
+  scroll-snap-type: y mandatory;
+  scrollbar-width: none;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
+.appointment-picker-time-wheel:focus-visible {
+  box-shadow: inset 0 0 0 2px rgb(37 99 235 / 42%);
+}
+
+.appointment-picker-time-wheel button {
+  width: 100%;
+  min-width: 0;
+  height: 44px;
+  display: block;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #5f7087;
+  font-size: 13px;
+  font-weight: 700;
+  opacity: .58;
+  scroll-snap-align: center;
+  touch-action: manipulation;
+  transition: color .12s ease, font-size .12s ease, opacity .12s ease;
+}
+
+.appointment-picker-time-wheel button.is-selected {
+  color: #2563eb;
+  font-size: 17px;
+  font-weight: 850;
+  opacity: 1;
+}
+
+.appointment-picker-actions {
+  position: sticky;
+  bottom: calc(-14px - env(safe-area-inset-bottom));
+  display: grid;
+  grid-template-columns: auto 1fr 1.35fr;
+  gap: 8px;
+  margin: 0 -14px;
+  padding: 10px 14px max(14px, env(safe-area-inset-bottom));
+  border-top: 1px solid #e8edf3;
+  background: rgb(255 255 255 / 97%);
+}
+
+.appointment-picker-actions button {
+  min-height: 44px;
+  border: 0;
+  border-radius: 12px;
+  background: #edf1f6;
+  color: #5d6e84;
+  font-size: 11px;
+  font-weight: 750;
+  touch-action: manipulation;
+}
+
+.appointment-picker-actions .appointment-picker-today {
+  padding: 0 12px;
+  background: transparent;
+  color: #3473c8;
+}
+
+.appointment-picker-actions .appointment-picker-confirm {
+  background: #2563eb;
+  color: #fff;
+}
+
+.theme-dark .appointment-picker-trigger,
+.theme-dark .appointment-picker-sheet {
+  border-color: var(--dark-border);
+  background: var(--dark-raised);
+  color: var(--dark-text);
+}
+
+.theme-dark .appointment-picker-backdrop {
+  background: rgb(0 0 0 / 78%);
+}
+
+.theme-dark .appointment-picker-handle {
+  background: var(--dark-border-strong);
+}
+
+.theme-dark .appointment-picker-header > button,
+.theme-dark .appointment-picker-calendar button {
+  color: var(--dark-text-secondary);
+}
+
+.theme-dark .appointment-picker-header > button:active {
+  background: var(--dark-active);
+}
+
+.theme-dark .appointment-picker-header span,
+.theme-dark .appointment-picker-weekdays,
+.theme-dark .appointment-picker-time-group > span {
+  color: var(--dark-text-muted);
+}
+
+.theme-dark .appointment-picker-calendar button.is-outside {
+  color: #606060;
+}
+
+.theme-dark .appointment-picker-calendar button.is-today:not(.is-selected),
+.theme-dark .appointment-picker-trigger::after {
+  color: #8bb9ff;
+}
+
+.theme-dark .appointment-picker-calendar button.is-selected,
+.theme-dark .appointment-picker-actions .appointment-picker-confirm {
+  background: var(--dark-accent);
+  color: #fff;
+}
+
+.theme-dark .appointment-picker-time,
+.theme-dark .appointment-picker-actions {
+  border-color: var(--dark-border);
+}
+
+.theme-dark .appointment-picker-time-separator {
+  color: var(--dark-text-secondary);
+}
+
+.theme-dark .appointment-picker-time-wheel-frame {
+  border-color: var(--dark-border-strong);
+  background: #111;
+}
+
+.theme-dark .appointment-picker-time-wheel-frame::before {
+  background: linear-gradient(#111 20%, rgb(17 17 17 / 18%));
+}
+
+.theme-dark .appointment-picker-time-wheel-frame::after {
+  background: linear-gradient(rgb(17 17 17 / 18%), #111 80%);
+}
+
+.theme-dark .appointment-picker-time-wheel-selection {
+  border-color: #3d6091;
+  background: #17243a;
+}
+
+.theme-dark .appointment-picker-time-wheel button {
+  color: var(--dark-text-secondary);
+}
+
+.theme-dark .appointment-picker-time-wheel button.is-selected {
+  color: #8bb9ff;
+}
+
+.theme-dark .appointment-picker-actions {
+  background: rgb(15 15 15 / 97%);
+}
+
+.theme-dark .appointment-picker-actions button {
+  background: var(--dark-active);
+  color: var(--dark-text-secondary);
+}
+
+.theme-dark .appointment-picker-actions .appointment-picker-today {
+  background: transparent;
+  color: #8bb9ff;
+}

@@ -1,0 +1,140 @@
+.drawer {
+  will-change: transform;
+  transition: transform .2s cubic-bezier(.22, 1, .36, 1);
+}
+
+.drawer.is-dragging {
+  animation: none;
+  transition: none;
+}
+
+.drawer-grip {
+  height: 20px;
+  display: grid;
+  place-items: center;
+  margin: -8px 0 -2px;
+  cursor: grab;
+  touch-action: none;
+}
+
+.drawer-grip:active {
+  cursor: grabbing;
+}
+
+.drawer-grip .drawer-handle {
+  margin: 0;
+  pointer-events: none;
+}
+
+.detail-exchange-logs {
+  margin: 12px 0 2px;
+  border: 1px solid #dce6f3;
+  border-radius: 12px;
+  background: #f8fbff;
+  padding: 10px;
+}
+
+.detail-exchange-log-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.detail-exchange-log-heading b {
+  color: #385b83;
+  font-size: 12px;
+}
+
+.detail-exchange-log-heading button {
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: 0;
+  border-radius: 8px;
+  background: #e5f0ff;
+  color: #246bd2;
+  padding: 0 9px;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.detail-exchange-log-heading button:disabled {
+  opacity: .65;
+}
+
+.detail-exchange-log-list {
+  display: grid;
+  gap: 7px;
+  margin: 9px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.detail-exchange-log-list li {
+  border-top: 1px solid #e1eaf5;
+  padding-top: 8px;
+}
+
+.detail-exchange-log-list li > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.detail-exchange-log-list b {
+  color: #2a5f9c;
+  font-size: 11px;
+}
+
+.detail-exchange-log-list span,
+.detail-exchange-log-list small,
+.detail-exchange-log-empty,
+.detail-exchange-log-error {
+  color: #778aa2;
+  font-size: 10px;
+}
+
+.detail-exchange-log-list p,
+.detail-exchange-log-empty,
+.detail-exchange-log-error {
+  margin: 4px 0 0;
+  line-height: 1.45;
+  word-break: break-all;
+}
+
+.detail-exchange-log-list small {
+  display: block;
+  margin-top: 2px;
+}
+
+.detail-exchange-log-error {
+  color: #bc4a4a;
+}
+
+.theme-dark .detail-exchange-logs {
+  border-color: #304664;
+  background: #17263b;
+}
+
+.theme-dark .detail-exchange-log-heading b,
+.theme-dark .detail-exchange-log-list b {
+  color: #9ac4ff;
+}
+
+.theme-dark .detail-exchange-log-heading button {
+  background: #24436d;
+  color: #a8ceff;
+}
+
+.theme-dark .detail-exchange-log-list li {
+  border-color: #2d425f;
+}
+
+.theme-dark .detail-exchange-log-list span,
+.theme-dark .detail-exchange-log-list small,
+.theme-dark .detail-exchange-log-empty {
+  color: #9badc5;
+}

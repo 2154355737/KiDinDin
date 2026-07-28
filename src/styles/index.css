@@ -1,0 +1,23 @@
+/* KiDinDin 全局样式入口：导入顺序即现有级联顺序，请勿随意调整。 */
+@import "./foundations/base.css";
+@import "./layout/app-shell.css";
+@import "./pages/login.css";
+@import "./components/home-controls.css";
+@import "./pages/workflow.css";
+@import "./pages/stats-submit.css";
+@import "./components/overlays.css";
+@import "./pages/settings.css";
+@import "./pages/stats.css";
+@import "./themes/dark.css";
+@import "./pages/more.css";
+@import "./pages/local-work-orders.css";
+@import "./components/appointment-picker.css";
+@import "./components/navigation.css";
+@import "./pages/log-audit.css";
+@import "./components/filter-sorting.css";
+@import "./foundations/reduced-motion.css";
+@import "./components/feedback.css";
+@import "./pages/batch-progress.css";
+@import "./components/drawer.css";
+@import "./components/work-order-interactions.css";
+@import "./pages/home-filters.css";

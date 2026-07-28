@@ -1,0 +1,99 @@
+/* Filter-panel ordering controls */
+
+.filter-panel {
+  width: min(320px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+.filter-panel::-webkit-scrollbar {
+  display: none;
+}
+
+.filter-section-label {
+  display: block;
+  margin: 3px 1px 7px;
+  color: #61728a;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.sort-filter-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin: 0 0 13px;
+}
+
+.filter-panel .sort-filter-options button {
+  min-width: 0;
+  height: 36px;
+  padding: 0 6px;
+  border: 1px solid #e0e7f0;
+  border-radius: 9px;
+  background: #edf3fc;
+  color: #54708f;
+  font-size: 11px;
+  font-weight: 750;
+  touch-action: manipulation;
+}
+
+.filter-panel .sort-filter-options button.active {
+  border-color: #2563eb;
+  background: #2563eb;
+  color: #fff;
+}
+
+.filter-panel .sort-filter-options button:disabled {
+  border-color: #e7ebf1;
+  background: #f2f4f7;
+  color: #a5afbc;
+  opacity: .72;
+}
+
+.filter-panel .sort-direction-button::before {
+  content: "↑";
+  margin-right: 5px;
+}
+
+.filter-panel .sort-direction-button:last-child::before {
+  content: "↓";
+}
+
+.filter-panel > button:last-child {
+  position: sticky;
+  bottom: -1px;
+  min-height: 44px;
+  margin-top: 2px;
+  box-shadow: 0 -8px 18px rgb(255 255 255 / 94%);
+  touch-action: manipulation;
+}
+
+.theme-dark .filter-section-label {
+  color: var(--dark-text-secondary);
+}
+
+.theme-dark .filter-panel .sort-filter-options button {
+  border-color: var(--dark-border-strong);
+  background: var(--dark-active);
+  color: var(--dark-text-secondary);
+}
+
+.theme-dark .filter-panel .sort-filter-options button.active {
+  border-color: var(--dark-accent);
+  background: var(--dark-accent);
+  color: #fff;
+}
+
+.theme-dark .filter-panel .sort-filter-options button:disabled {
+  border-color: var(--dark-border);
+  background: #151515;
+  color: var(--dark-text-muted);
+}
+
+.theme-dark .filter-panel > button:last-child {
+  box-shadow: 0 -8px 18px rgb(23 23 23 / 96%);
+}

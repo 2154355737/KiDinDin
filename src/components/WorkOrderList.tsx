@@ -197,9 +197,11 @@ export function WorkOrderList({
   localMetaById = {},
   groupByFloor = false,
   floorGroupingResetKey,
+  collapsedFloorGroupKeys,
   loading = false,
   onToggle,
   onDetail,
+  onCollapsedFloorGroupKeysChange,
   onToggleFavorite,
   onTogglePinned,
   onSaveNote,
@@ -209,9 +211,11 @@ export function WorkOrderList({
   localMetaById?: Record<string, LocalWorkOrderMeta>;
   groupByFloor?: boolean;
   floorGroupingResetKey?: string;
+  collapsedFloorGroupKeys?: readonly string[];
   loading?: boolean;
   onToggle?: (id: string) => void;
   onDetail: (order: WorkOrder) => void;
+  onCollapsedFloorGroupKeysChange?: (keys: string[]) => void;
   onToggleFavorite?: (order: WorkOrder) => Promise<void> | void;
   onTogglePinned?: (order: WorkOrder) => Promise<void> | void;
   onSaveNote?: (order: WorkOrder, note: string) => Promise<void> | void;
@@ -235,7 +239,7 @@ export function WorkOrderList({
             normalizedGroupPart(order.unitNumber),
             floorNumber,
           ])}`
-        : `order:${orderMotionKey(order)}:${index}`;
+        : `order:${orderMotionKey(order)}`;
       const current = groups.get(key);
       const entry = { order, index };
       if (current) current.entries.push(entry);
@@ -254,9 +258,23 @@ export function WorkOrderList({
   const gesturesEnabled =
     !selectable &&
     Boolean(onToggleFavorite && onTogglePinned && onSaveNote);
-  const [collapsedFloorGroups, setCollapsedFloorGroups] = useState<Set<string>>(
-    () => new Set(),
+  const [internalCollapsedFloorGroups, setInternalCollapsedFloorGroups] =
+    useState<Set<string>>(() => new Set());
+  const controlledCollapsedFloorGroups = useMemo(
+    () => new Set(collapsedFloorGroupKeys),
+    [collapsedFloorGroupKeys],
   );
+  const collapsedFloorGroups =
+    collapsedFloorGroupKeys === undefined
+      ? internalCollapsedFloorGroups
+      : controlledCollapsedFloorGroups;
+  const collapsedVisibleFloorGroupCount = floorGroups.reduce(
+    (count, group) => count + Number(collapsedFloorGroups.has(group.key)),
+    0,
+  );
+  const allVisibleFloorGroupsCollapsed =
+    floorGroups.length > 0 &&
+    collapsedVisibleFloorGroupCount === floorGroups.length;
   const [lastToggledFloorGroup, setLastToggledFloorGroup] = useState<
     string | null
   >(null);
@@ -610,20 +628,43 @@ export function WorkOrderList({
     }
   };
 
+  const commitCollapsedFloorGroups = (next: Set<string>) => {
+    if (collapsedFloorGroupKeys === undefined)
+      setInternalCollapsedFloorGroups(next);
+    onCollapsedFloorGroupKeysChange?.(Array.from(next));
+  };
+
   const toggleFloorGroup = (groupKey: string) => {
     setPinPopover(null);
     resetSwipeVisual(false);
     setLastToggledFloorGroup(groupKey);
-    setCollapsedFloorGroups((current) => {
-      const next = new Set(current);
-      if (next.has(groupKey)) next.delete(groupKey);
-      else next.add(groupKey);
-      return next;
-    });
+    const next = new Set(collapsedFloorGroups);
+    if (next.has(groupKey)) next.delete(groupKey);
+    else next.add(groupKey);
+    commitCollapsedFloorGroups(next);
+  };
+
+  const expandAllFloorGroups = () => {
+    setPinPopover(null);
+    resetSwipeVisual(false);
+    setLastToggledFloorGroup(null);
+    const next = new Set(collapsedFloorGroups);
+    floorGroups.forEach((group) => next.delete(group.key));
+    commitCollapsedFloorGroups(next);
+  };
+
+  const collapseAllFloorGroups = () => {
+    setPinPopover(null);
+    resetSwipeVisual(false);
+    setLastToggledFloorGroup(null);
+    const next = new Set(collapsedFloorGroups);
+    floorGroups.forEach((group) => next.add(group.key));
+    commitCollapsedFloorGroups(next);
   };
 
   useEffect(() => {
-    setCollapsedFloorGroups(new Set());
+    if (collapsedFloorGroupKeys === undefined)
+      setInternalCollapsedFloorGroups(new Set());
     setLastToggledFloorGroup(null);
     setPinPopover(null);
     resetSwipeVisual(false);
@@ -958,6 +999,34 @@ export function WorkOrderList({
         aria-busy={loading}
         layoutScroll={motionEnabled && !groupByFloor}
       >
+        {groupByFloor && floorGroups.length > 0 ? (
+          <div
+            className="order-floor-group-controls"
+            role="group"
+            aria-label="楼层分组展开和收起"
+          >
+            <button
+              type="button"
+              className="order-floor-groups-toggle-all"
+              aria-label={
+                allVisibleFloorGroupsCollapsed
+                  ? `展开全部 ${floorGroups.length} 个楼层`
+                  : `收起全部 ${floorGroups.length} 个楼层`
+              }
+              onClick={
+                allVisibleFloorGroupsCollapsed
+                  ? expandAllFloorGroups
+                  : collapseAllFloorGroups
+              }
+            >
+              <Icon
+                name={allVisibleFloorGroupsCollapsed ? "expand" : "collapse"}
+                size={13}
+              />
+              {allVisibleFloorGroupsCollapsed ? "展开全部" : "收起全部"}
+            </button>
+          </div>
+        ) : null}
         <AnimatePresence initial={false} mode="popLayout">
           {groupByFloor
             ? floorGroups.map((group, groupIndex) => {

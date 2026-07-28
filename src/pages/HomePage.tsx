@@ -11,6 +11,7 @@ export function HomePage({
   query,
   date,
   localMetaById,
+  collapsedFloorGroupKeys = [],
   activeFilterCount = 0,
   prioritizePinned = true,
   loading = false,
@@ -20,6 +21,7 @@ export function HomePage({
   onFilter,
   onResetFilters,
   onDetail,
+  onCollapsedFloorGroupKeysChange,
   onToggleFavorite,
   onTogglePinned,
   onSaveNote,
@@ -29,6 +31,7 @@ export function HomePage({
   query: string;
   date: string;
   localMetaById: Record<string, LocalWorkOrderMeta>;
+  collapsedFloorGroupKeys?: readonly string[];
   activeFilterCount?: number;
   prioritizePinned?: boolean;
   loading?: boolean;
@@ -38,6 +41,7 @@ export function HomePage({
   onFilter: () => void;
   onResetFilters: () => void;
   onDetail: (order: WorkOrder) => void;
+  onCollapsedFloorGroupKeysChange: (keys: string[]) => void;
   onToggleFavorite: (order: WorkOrder) => Promise<void>;
   onTogglePinned: (order: WorkOrder) => Promise<void>;
   onSaveNote: (order: WorkOrder, note: string) => Promise<void>;
@@ -121,8 +125,10 @@ export function HomePage({
         loading={loading}
         groupByFloor
         floorGroupingResetKey={date}
+        collapsedFloorGroupKeys={collapsedFloorGroupKeys}
         localMetaById={localMetaById}
         onDetail={onDetail}
+        onCollapsedFloorGroupKeysChange={onCollapsedFloorGroupKeysChange}
         onToggleFavorite={onToggleFavorite}
         onTogglePinned={onTogglePinned}
         onSaveNote={onSaveNote}
