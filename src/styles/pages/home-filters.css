@@ -1,7 +1,7 @@
 /* 首页筛选状态与固定操作定位 */
 
 .filter-button.has-active-filters {
-  color: #2563eb;
+  color: var(--accent);
 }
 
 .filter-count {
@@ -15,7 +15,7 @@
   padding: 0 4px;
   border: 2px solid #f7f9fc;
   border-radius: 999px;
-  background: #2563eb;
+  background: var(--accent);
   color: #fff;
   font-size: 8px;
   font-weight: 850;
@@ -29,9 +29,9 @@
   gap: 7px;
   margin: -1px 0 6px;
   padding: 3px 4px 3px 9px;
-  border: 1px solid #d9e8fb;
+  border: 1px solid var(--accent-soft-strong);
   border-radius: 9px;
-  background: #eef6ff;
+  background: var(--accent-soft);
 }
 
 .active-filter-summary button {
@@ -51,7 +51,7 @@
 .active-filter-summary button:last-child {
   flex: none;
   padding: 5px 6px;
-  color: #1767c9;
+  color: var(--accent-strong);
   font-weight: 800;
 }
 
@@ -91,17 +91,17 @@
 }
 
 .theme-dark .filter-button.has-active-filters {
-  color: #79afff;
+  color: var(--accent-on-dark);
 }
 
 .theme-dark .filter-count {
   border-color: #171717;
-  background: #4f8cff;
+  background: var(--accent-hover);
 }
 
 .theme-dark .active-filter-summary {
-  border-color: #2f4767;
-  background: #1b2b42;
+  border-color: var(--accent-border);
+  background: var(--accent-dark-soft);
 }
 
 .theme-dark .active-filter-summary button {
@@ -109,7 +109,7 @@
 }
 
 .theme-dark .active-filter-summary button:last-child {
-  color: #82b7ff;
+  color: var(--accent-on-dark);
 }
 
 .theme-dark .filter-panel .filter-reset-button {

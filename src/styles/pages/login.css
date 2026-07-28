@@ -13,8 +13,8 @@
   height: 56px;
   width: 56px;
   border-radius: 18px;
-  background: linear-gradient(145deg,#3983f4,#1c56bd);
-  box-shadow: 0 12px 25px rgba(37,99,235,.22);
+  background: var(--accent-gradient);
+  box-shadow: 0 12px 25px rgb(var(--accent-rgb) / .22);
   display: grid;
   place-items: center;
   color: white;
@@ -59,8 +59,8 @@
 }
 
 .token-field textarea:focus {
-  border-color: #78aaf6;
-  box-shadow: 0 0 0 3px rgba(59,130,246,.10);
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / .10);
 }
 
 .login-button {

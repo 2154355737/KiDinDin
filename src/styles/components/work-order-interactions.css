@@ -18,7 +18,7 @@
   bottom: 0;
   left: 0;
   width: 3px;
-  background: #3b82f6;
+  background: var(--accent);
   pointer-events: none;
 }
 
@@ -27,7 +27,7 @@
 }
 
 .order-swipe-actions {
-  background: #3978cc;
+  background: var(--accent);
 }
 
 .order-swipe-actions.is-favorite {
@@ -78,20 +78,32 @@
   min-height: 25px;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  padding: 0 1px;
+  justify-content: space-between;
+  gap: 7px;
+  padding: 0 1px 0 5px;
   background: transparent;
 }
 
+.order-floor-group-message {
+  min-width: 0;
+  overflow: hidden;
+  color: #6d8097;
+  font-size: 9px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .order-floor-group-controls .order-floor-groups-toggle-all {
+  flex: none;
   height: 25px;
   display: inline-flex;
   align-items: center;
   gap: 3px;
   border: 0;
   border-radius: 999px;
-  background: #eaf2fd;
-  color: #35689f;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
   padding: 0 9px 0 7px;
   font-size: 9px;
   font-weight: 800;
@@ -216,7 +228,7 @@
   width: 10px;
   height: 10px;
   transform: rotate(45deg);
-  background: #2c68bd;
+  background: var(--accent-strong);
 }
 
 .order-pin-popover button {
@@ -230,7 +242,7 @@
   gap: 4px;
   border: 0;
   border-radius: 9px;
-  background: #2c68bd;
+  background: var(--accent-strong);
   color: #fff;
   padding: 0 11px;
   font-size: 11px;
@@ -280,8 +292,8 @@
 }
 
 .order-note-dialog textarea:focus {
-  border-color: #77a8ef;
-  box-shadow: 0 0 0 3px rgba(55, 115, 208, .12);
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / .12);
 }
 
 .order-note-dialog small {
@@ -309,13 +321,13 @@
 }
 
 .order-note-dialog button:last-child {
-  background: #2d73da;
+  background: var(--accent);
   color: #fff;
 }
 
 .theme-dark .order-pin-popover::before,
 .theme-dark .order-pin-popover button {
-  background: #315f9c;
+  background: var(--accent-strong);
 }
 
 .theme-dark .order-floor-group-toggle {
@@ -326,6 +338,10 @@
 
 .theme-dark .order-floor-group-controls {
   background: transparent;
+}
+
+.theme-dark .order-floor-group-message {
+  color: #93a6bd;
 }
 
 .theme-dark .order-floor-group-controls .order-floor-groups-toggle-all {
@@ -361,6 +377,6 @@
 }
 
 .theme-dark .order-note-dialog button:last-child {
-  background: #3f7bd1;
+  background: var(--accent);
   color: #fff;
 }

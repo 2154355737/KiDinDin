@@ -8,7 +8,6 @@
 @import "./components/overlays.css";
 @import "./pages/settings.css";
 @import "./pages/stats.css";
-@import "./themes/dark.css";
 @import "./pages/more.css";
 @import "./pages/local-work-orders.css";
 @import "./components/appointment-picker.css";
@@ -21,3 +20,5 @@
 @import "./components/drawer.css";
 @import "./components/work-order-interactions.css";
 @import "./pages/home-filters.css";
+@import "./themes/dark.css";
+@import "./themes/palettes.css";

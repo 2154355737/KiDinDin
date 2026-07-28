@@ -58,6 +58,13 @@ import {
   type AuthStatus,
 } from "./services/tauri";
 import {
+  APPEARANCE_STORAGE_KEY,
+  getThemeMetaColor,
+  loadAppearanceSettings,
+  resolveAccent,
+  resolveTheme,
+} from "./services/theme";
+import {
   getWorkOrderStatus,
   matchesWorkOrderStatus,
   workOrderStatusOptions,
@@ -65,7 +72,7 @@ import {
   type MainTab,
   type OrderStatus,
   type Screen,
-  type Theme,
+  type AppearanceSettings,
   type WorkOrder,
   type WorkOrderStatusFilter,
 } from "./types/workOrder";
@@ -613,7 +620,9 @@ export default function App() {
   >(null);
   const [screen, setScreen] = useState<Screen>("orders");
   const [mainTab, setMainTab] = useState<MainTab>("home");
-  const [theme, setTheme] = useState<Theme>("system");
+  const [appearanceSettings, setAppearanceSettings] =
+    useState<AppearanceSettings>(loadAppearanceSettings);
+  const [appearanceClock, setAppearanceClock] = useState(() => Date.now());
   const [systemDark, setSystemDark] = useState(
     () => window.matchMedia("(prefers-color-scheme: dark)").matches,
   );
@@ -751,8 +760,11 @@ export default function App() {
     dismissedSessionExpiryKey !== sessionExpiryKey;
   const displaySessionExpiryNotice =
     showSessionExpiryNotice && !drawer && !filterOpen;
-  const appliedTheme =
-    theme === "system" ? (systemDark ? "dark" : "light") : theme;
+  const appliedTheme = resolveTheme(appearanceSettings, systemDark);
+  const appliedAccent = resolveAccent(
+    appearanceSettings,
+    new Date(appearanceClock),
+  );
   const operatorName = customOperatorName.trim() || "段鑫";
   const pendingLogRetryStorageKey = localAccountKey
     ? `${PENDING_LOG_RETRY_STORAGE_PREFIX}${localAccountKey}`
@@ -1040,18 +1052,46 @@ export default function App() {
     return () => media.removeEventListener("change", syncTheme);
   }, []);
   useEffect(() => {
+    localStorage.setItem(
+      APPEARANCE_STORAGE_KEY,
+      JSON.stringify(appearanceSettings),
+    );
+  }, [appearanceSettings]);
+  useEffect(() => {
+    if (appearanceSettings.accentMode !== "schedule") return;
+    const syncClock = () => setAppearanceClock(Date.now());
+    const timer = window.setInterval(syncClock, 30_000);
+    window.addEventListener("focus", syncClock);
+    document.addEventListener("visibilitychange", syncClock);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", syncClock);
+      document.removeEventListener("visibilitychange", syncClock);
+    };
+  }, [appearanceSettings.accentMode]);
+  useEffect(() => {
     const root = document.documentElement;
     const themeColor = document.querySelector<HTMLMetaElement>(
       'meta[name="theme-color"]',
     );
     root.dataset.theme = appliedTheme;
-    root.style.colorScheme = appliedTheme;
-    document.body.classList.toggle("theme-dark", appliedTheme === "dark");
-    themeColor?.setAttribute(
-      "content",
-      appliedTheme === "dark" ? "#000000" : "#f7f9fc",
+    root.style.colorScheme = appliedTheme === "dark" ? "dark" : "light";
+    (["light", "dark"] as const).forEach((themeName) => {
+      document.body.classList.toggle(
+        `theme-${themeName}`,
+        appliedTheme === themeName,
+      );
+    });
+    (["sky", "pink", "green", "purple", "orange"] as const).forEach(
+      (accentName) => {
+        document.body.classList.toggle(
+          `accent-${accentName}`,
+          appliedAccent === accentName,
+        );
+      },
     );
-  }, [appliedTheme]);
+    themeColor?.setAttribute("content", getThemeMetaColor(appliedTheme));
+  }, [appliedAccent, appliedTheme]);
   useEffect(() => {
     localStorage.setItem(
       DEFAULT_OPERATOR_NAME_STORAGE_KEY,
@@ -2252,7 +2292,9 @@ export default function App() {
 
   if (auth === null)
     return (
-      <div className={`app-shell theme-${appliedTheme}`}>
+      <div
+        className={`app-shell theme-${appliedTheme} accent-${appliedAccent}`}
+      >
         <main className="phone-frame">
           <div className="loading-mask" aria-live="polite">
             正在恢复登录…
@@ -2262,7 +2304,9 @@ export default function App() {
     );
   if (!loggedIn)
     return (
-      <div className={`app-shell theme-${appliedTheme}`}>
+      <div
+        className={`app-shell theme-${appliedTheme} accent-${appliedAccent}`}
+      >
         <main className="phone-frame">
           <LoginPage
             onLogin={login}
@@ -2276,7 +2320,9 @@ export default function App() {
     );
 
   return (
-    <div className={`app-shell theme-${appliedTheme}`}>
+    <div
+      className={`app-shell theme-${appliedTheme} accent-${appliedAccent}`}
+    >
       <main
         className={`phone-frame screen-${screen}`}
         aria-busy={loadingOrders}
@@ -2655,12 +2701,14 @@ export default function App() {
             detailAjInfo={detailAjInfo}
             detailLoading={detailLoading}
             detailError={detailError}
-            theme={theme}
+            appliedTheme={appliedTheme}
+            appliedAccent={appliedAccent}
+            appearanceSettings={appearanceSettings}
             auth={auth!}
             libraryPhotos={[]}
             defaultOperatorName={customOperatorName}
             setDefaultOperatorName={setCustomOperatorName}
-            setTheme={setTheme}
+            setAppearanceSettings={setAppearanceSettings}
             onCheckLog={checkLogBeforeRetry}
             onRetryLog={retryLog}
             onLoadExchangeLogs={fetchWorkOrderExchangeLogs}

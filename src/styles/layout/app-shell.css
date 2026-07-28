@@ -2,7 +2,13 @@
   min-height: 100dvh;
   display: flex;
   justify-content: center;
-  background: radial-gradient(circle at 50% -10%, #d9e7ff, transparent 42%), #eef2f8;
+  background:
+    radial-gradient(
+      circle at 50% -10%,
+      var(--accent-soft-strong),
+      transparent 42%
+    ),
+    #eef2f8;
 }
 
 .phone-frame {
@@ -55,7 +61,7 @@
 }
 
 .pull-refresh-indicator.ready {
-  color: #246bd2;
+  color: var(--accent-strong);
 }
 
 .pull-refresh-indicator.refreshing .icon {
@@ -126,7 +132,7 @@
 }
 
 .theme-dark .confirm-hero {
-  background: linear-gradient(135deg,#1b3762,#1a2a48);
+  background: var(--accent-gradient);
 }
 
 .theme-dark .summary-strip {
@@ -218,7 +224,7 @@
 
 .text-button {
   border: 0;
-  color: #2563eb;
+  color: var(--accent);
   background: transparent;
   height: 44px;
   padding: 0 2px;

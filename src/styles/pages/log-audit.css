@@ -97,7 +97,7 @@
   margin: 0;
   border: 0;
   border-radius: 12px;
-  background: #2563eb;
+  background: var(--accent);
   color: #fff;
   display: flex;
   align-items: center;
@@ -277,8 +277,8 @@
 }
 
 .audit-status.checking {
-  background: #e7f0ff;
-  color: #246bd2;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
 }
 
 .audit-status.present {
@@ -357,8 +357,8 @@
 }
 
 .theme-dark .audit-status.checking {
-  background: #213d64;
-  color: #8bbcff;
+  background: var(--accent-dark-soft-strong);
+  color: var(--accent-on-dark);
 }
 
 .theme-dark .audit-status.present {

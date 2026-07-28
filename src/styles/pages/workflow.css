@@ -22,7 +22,7 @@
 
 .stepper .current {
   color: #fff;
-  background: #2563eb;
+  background: var(--accent);
 }
 
 .stepper i {
@@ -74,9 +74,9 @@
 }
 
 .prepare-tabs .active {
-  color: #145fc1;
-  border-color: #87b5fa;
-  background: #ecf4ff;
+  color: var(--accent-strong);
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
 }
 
 .prep-order {
@@ -135,8 +135,8 @@
 
 .random-button {
   border: 0;
-  background: #eaf2ff;
-  color: #1d64c9;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
   border-radius: 9px;
   padding: 6px 9px;
   font-size: 11px;
@@ -215,7 +215,7 @@
 }
 
 .photo-tile.is-active {
-  outline: 3px solid #2563eb;
+  outline: 3px solid var(--accent);
   outline-offset: 1px;
 }
 
@@ -226,7 +226,7 @@
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: #2563eb;
+  background: var(--accent);
   display: grid;
   place-items: center;
 }
@@ -244,7 +244,7 @@
   margin: 13px 0 12px;
   border-radius: 18px;
   padding: 18px;
-  background: linear-gradient(135deg,#e7f0ff,#dfeaff);
+  background: linear-gradient(135deg,var(--accent-soft),var(--accent-soft-strong));
   display: grid;
   grid-template-columns: auto auto 1fr;
   align-items: baseline;
@@ -258,7 +258,7 @@
 }
 
 .confirm-hero strong {
-  color: #2563eb;
+  color: var(--accent);
   font-size: 34px;
   line-height: 1;
 }
@@ -379,14 +379,14 @@
   height: 92px;
   width: 92px;
   border-radius: 50%;
-  border: 8px solid #dceafe;
-  border-top-color: #2563eb;
+  border: 8px solid var(--accent-soft-strong);
+  border-top-color: var(--accent);
   display: flex;
   justify-content: center;
   align-items: baseline;
   padding-top: 28px;
   margin: auto;
-  color: #2563eb;
+  color: var(--accent);
 }
 
 .run-ring b {
@@ -419,7 +419,7 @@
 
 .progress-track i {
   height: 100%;
-  background: #2563eb;
+  background: var(--accent);
   display: block;
   border-radius: inherit;
 }
@@ -471,7 +471,7 @@
 }
 
 .run-current li.working {
-  color: #236add;
+  color: var(--accent-strong);
   font-weight: 700;
 }
 
@@ -493,7 +493,7 @@
 }
 
 .log-panel>div span {
-  color: #6fb2ff;
+  color: var(--accent-on-dark);
   font-size: 10px;
 }
 
@@ -540,7 +540,7 @@
 
 .record-summary b {
   font-size: 22px;
-  color: #1d6fe1;
+  color: var(--accent-strong);
 }
 
 .record-summary span {

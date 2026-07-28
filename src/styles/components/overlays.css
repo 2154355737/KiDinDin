@@ -57,8 +57,8 @@
 }
 
 .detail-address {
-  background: #f3f7fd;
-  border-left: 3px solid #5a94ed;
+  background: var(--accent-soft);
+  border-left: 3px solid var(--accent);
   padding: 8px 10px;
   margin: 0 0 12px;
   display: grid;
@@ -121,10 +121,10 @@
 
 .add-photo {
   aspect-ratio: 1.17;
-  border: 1px dashed #9eb5d9;
+  border: 1px dashed var(--accent-border);
   border-radius: 11px;
-  color: #3575cf;
-  background: #f2f7ff;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
   display: grid;
   place-content: center;
   justify-items: center;
@@ -161,9 +161,9 @@
 }
 
 .theme-select .active {
-  color: #246bd2;
-  background: #e8f1ff;
-  border-color: #95bdff;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
 }
 
 .session>b {
@@ -200,7 +200,7 @@
 .theme-dark .theme-select .active {
   background: #233b62;
   border-color: #5389de;
-  color: #dceaff;
+  color: var(--accent-soft-strong);
 }
 
 .theme-dark .detail-content dl,.theme-dark .detail-note {
@@ -258,7 +258,7 @@
   height: 40px;
   border: 0;
   border-radius: 10px;
-  background: #2563eb;
+  background: var(--accent);
   color: #fff;
   font-weight: 750;
 }
@@ -351,7 +351,7 @@
 }
 
 .date-dialog .date-grid button.selected {
-  background: #2563eb;
+  background: var(--accent);
   color: #fff;
   font-weight: 800;
 }
@@ -369,7 +369,7 @@
   height: 26px;
   border: 0;
   background: transparent;
-  color: #2868ce;
+  color: var(--accent-strong);
   font-size: 11px;
   font-weight: 750;
   padding: 0 8px;
@@ -499,7 +499,7 @@
 
 .network-error button {
   border: 0;
-  color: #1e62c1;
+  color: var(--accent-strong);
   background: transparent;
   font-weight: 750;
   margin-left: 7px;
@@ -512,24 +512,24 @@
   display: grid;
   place-items: center;
   background: #f7f9fccc;
-  color: #2563eb;
+  color: var(--accent);
   font-size: 13px;
   font-weight: 750;
 }
 
 .file-picker {
   min-height: 58px;
-  border: 1px dashed #8faedb;
+  border: 1px dashed var(--accent-border);
   border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
   padding: 10px 11px;
-  color: #2868c8;
+  color: var(--accent-strong);
   font-size: 12px;
   font-weight: 700;
-  background: #f5f9ff;
+  background: var(--accent-soft);
 }
 
 .file-picker span {
@@ -548,7 +548,7 @@
 .theme-dark .login-extra input,.theme-dark .file-picker {
   background: #182235;
   border-color: #354b6d;
-  color: #bdd5ff;
+  color: var(--accent-on-dark);
 }
 
 .theme-dark .loading-mask {
@@ -566,8 +566,8 @@
 }
 
 .status-processing,.status-submitting {
-  color: #1763bf;
-  background: #e5f0ff;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
 }
 
 .status-completed {
@@ -600,7 +600,7 @@
 }
 
 .filter-panel .status-filter-options button.active {
-  background: #2563eb;
+  background: var(--accent);
   color: #fff;
 }
 
@@ -610,7 +610,7 @@
 }
 
 .theme-dark .filter-panel .status-filter-options button.active {
-  background: #4f8cff;
+  background: var(--accent-hover);
   color: #fff;
 }
 
@@ -638,8 +638,8 @@
 }
 
 .building-filter select:focus {
-  border-color: #79aaf3;
-  box-shadow: 0 0 0 3px rgba(59,130,246,.1);
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / .1);
 }
 
 .theme-dark .building-filter {
@@ -699,7 +699,7 @@
 .detail-section h3 {
   margin: 0 0 5px;
   font-size: 12px;
-  color: #3873c5;
+  color: var(--accent-strong);
 }
 
 .detail-section dl {
@@ -751,7 +751,7 @@
 }
 
 .theme-dark .detail-section h3 {
-  color: #78aefe;
+  color: var(--accent-on-dark);
 }
 
 .theme-dark .detail-error {
@@ -861,7 +861,7 @@
 }
 
 .retry-confirm-dialog button:last-child {
-  background: #2d73da;
+  background: var(--accent);
   color: #fff;
 }
 
@@ -972,8 +972,8 @@
 }
 
 .filter-picker-menu button.active {
-  background: #e7f1ff !important;
-  color: #1f67ce !important;
+  background: var(--accent-soft) !important;
+  color: var(--accent-strong) !important;
   font-weight: 800 !important;
 }
 
@@ -1012,7 +1012,7 @@
 }
 
 .order-card.selected {
-  background: #f3f8ff;
+  background: var(--accent-soft);
   border-color: #dbe9fc;
   box-shadow: none;
 }

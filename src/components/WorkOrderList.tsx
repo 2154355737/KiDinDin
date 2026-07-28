@@ -197,6 +197,7 @@ export function WorkOrderList({
   localMetaById = {},
   groupByFloor = false,
   floorGroupingResetKey,
+  floorGroupingMessage,
   collapsedFloorGroupKeys,
   loading = false,
   onToggle,
@@ -211,6 +212,7 @@ export function WorkOrderList({
   localMetaById?: Record<string, LocalWorkOrderMeta>;
   groupByFloor?: boolean;
   floorGroupingResetKey?: string;
+  floorGroupingMessage?: string;
   collapsedFloorGroupKeys?: readonly string[];
   loading?: boolean;
   onToggle?: (id: string) => void;
@@ -1005,6 +1007,11 @@ export function WorkOrderList({
             role="group"
             aria-label="楼层分组展开和收起"
           >
+            {floorGroupingMessage ? (
+              <span className="order-floor-group-message">
+                {floorGroupingMessage}
+              </span>
+            ) : null}
             <button
               type="button"
               className="order-floor-groups-toggle-all"

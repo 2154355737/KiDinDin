@@ -2,7 +2,7 @@
   margin: 5px 0 12px;
   border-radius: 16px;
   padding: 16px;
-  background: linear-gradient(135deg,#e7f0ff,#dceaff);
+  background: linear-gradient(135deg,var(--accent-soft),var(--accent-soft-strong));
   display: grid;
   grid-template-columns: auto auto 1fr;
   align-items: baseline;
@@ -16,7 +16,7 @@
 }
 
 .stats-hero strong,.submit-hero strong {
-  color: #2563eb;
+  color: var(--accent);
   font-size: 34px;
   line-height: 1;
 }
@@ -52,7 +52,7 @@
 }
 
 .stats-grid b {
-  color: #246bd2;
+  color: var(--accent-strong);
   font-size: 20px;
 }
 
@@ -99,11 +99,11 @@
   height: 56px;
   border: 0;
   border-radius: 50%;
-  background: #2563eb;
+  background: var(--accent);
   color: #fff;
   display: grid;
   place-items: center;
-  box-shadow: 0 8px 20px rgba(37,99,235,.35);
+  box-shadow: 0 8px 20px rgb(var(--accent-rgb) / .35);
 }
 
 .submit-fab:active {
@@ -136,11 +136,11 @@
 }
 
 .theme-dark .stats-hero,.theme-dark .submit-hero {
-  background: linear-gradient(135deg,#1b3762,#1a2a48);
+  background: var(--accent-gradient);
 }
 
 .theme-dark .submit-fab {
-  background: #4f8cff;
+  background: var(--accent-hover);
 }
 
 .theme-dark .submit-fab span {

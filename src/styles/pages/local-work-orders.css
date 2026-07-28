@@ -47,9 +47,9 @@
 }
 
 .local-work-order-tabs button.active {
-  border-color: #8bb7f7;
-  background: #ebf3ff;
-  color: #2563eb;
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .local-work-order-search {
@@ -79,8 +79,8 @@
 }
 
 .local-work-order-card.is-pinned {
-  border-color: #9fc3fa;
-  box-shadow: inset 3px 0 #3b82f6;
+  border-color: var(--accent-border);
+  box-shadow: inset 3px 0 var(--accent);
 }
 
 .local-work-order-card.is-saving {
@@ -169,14 +169,14 @@
 }
 
 .local-work-order-meta .local-work-order-appointment {
-  color: #2f72ca;
+  color: var(--accent-strong);
   font-weight: 700;
 }
 
 .local-work-order-detail-label {
   justify-content: flex-end;
   margin-top: 8px;
-  color: #4777b7;
+  color: var(--accent-strong);
   font-size: 9px;
   font-weight: 700;
 }
@@ -230,9 +230,9 @@
 }
 
 .local-work-order-actions button.is-active {
-  border-color: #a4c5f6;
-  background: #edf5ff;
-  color: #2563eb;
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .local-work-order-actions button:disabled {
@@ -273,7 +273,7 @@
 /* Compact local markers on the home list */
 
 .order-card.locally-pinned {
-  box-shadow: inset 3px 0 #3b82f6;
+  box-shadow: inset 3px 0 var(--accent);
 }
 
 .order-id-line {
@@ -287,7 +287,7 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  color: #3775ca;
+  color: var(--accent-strong);
 }
 
 .order-favorite-badge {
@@ -352,9 +352,9 @@
 }
 
 .local-marker-actions button.active {
-  border-color: #91b9f4;
-  background: #eaf3ff;
-  color: #2563eb;
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .local-workorder-block > label,
@@ -396,14 +396,14 @@
 
 .local-workorder-save button:first-child {
   flex: 1;
-  border-color: #2563eb;
-  background: #2563eb;
+  border-color: var(--accent);
+  background: var(--accent);
   color: #fff;
 }
 
 .local-workorder-block > p {
   margin: -2px 1px 0;
-  color: #3473c8;
+  color: var(--accent-strong);
   font-size: 9px;
 }
 
@@ -416,8 +416,8 @@
 .theme-dark .local-marker-actions button.active,
 .theme-dark .local-data-message {
   border-color: #30486d;
-  background: #17243a;
-  color: #8bb9ff;
+  background: var(--accent-dark-soft);
+  color: var(--accent-on-dark);
 }
 
 .theme-dark .local-page-message {
@@ -445,7 +445,7 @@
 
 .theme-dark .more-feature-icon {
   background: var(--dark-active);
-  color: #8bb9ff;
+  color: var(--accent-on-dark);
 }
 
 .theme-dark .local-workorder-save button:first-child {
@@ -503,7 +503,7 @@
 .theme-dark .local-work-order-meta .local-work-order-appointment,
 .theme-dark .local-work-order-detail-label,
 .theme-dark .local-workorder-block > p {
-  color: #8bb9ff;
+  color: var(--accent-on-dark);
 }
 
 .theme-dark .order-favorite-badge {

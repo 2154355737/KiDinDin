@@ -7,7 +7,7 @@
   place-items: center;
   padding: 8px;
   border: 0;
-  background: conic-gradient(from -90deg, #2563eb 0deg var(--run-progress), #dceafe var(--run-progress) 360deg);
+  background: conic-gradient(from -90deg, var(--accent) 0deg var(--run-progress), var(--accent-soft-strong) var(--run-progress) 360deg);
 }
 
 .run-ring::before {

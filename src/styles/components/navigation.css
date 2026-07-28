@@ -51,7 +51,7 @@
 }
 
 .bottom-nav button.active {
-  color: #1769d2;
+  color: var(--accent-strong);
   font-weight: 800;
 }
 
@@ -64,7 +64,7 @@
 }
 
 .bottom-nav button:focus-visible {
-  outline: 2px solid #5c9df4;
+  outline: 2px solid var(--accent-border);
   outline-offset: -3px;
 }
 
@@ -80,7 +80,7 @@
 }
 
 .theme-dark .bottom-nav button.active {
-  color: #79afff;
+  color: var(--accent-on-dark);
 }
 
 @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {

@@ -10,9 +10,9 @@
   margin: 0 0 11px;
   border-radius: 18px;
   padding: 17px 16px 12px;
-  background: linear-gradient(135deg,#1d6fd9,#4c9dff);
+  background: var(--accent-gradient);
   color: #fff;
-  box-shadow: 0 10px 22px rgba(37,99,235,.2);
+  box-shadow: 0 10px 22px rgb(var(--accent-rgb) / .2);
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 2px 12px;
@@ -38,7 +38,7 @@
 }
 
 .overview-copy>span {
-  color: #dceaff;
+  color: var(--accent-soft-strong);
   font-size: 11px;
   font-weight: 700;
 }
@@ -76,7 +76,7 @@
   width: 100%;
   height: 100%;
   border-radius: 50%;
-  background: #327fdf;
+  background: var(--accent);
   display: grid;
   place-content: center;
   justify-items: center;
@@ -98,7 +98,7 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  color: #f3f8ff;
+  color: var(--accent-soft);
   font-size: 11px;
 }
 
@@ -131,8 +131,8 @@
 }
 
 .kpi-icon.total {
-  color: #276ed0;
-  background: #e9f2ff;
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .kpi-icon.household {
@@ -204,7 +204,7 @@
 }
 
 .stats-section-heading>b {
-  color: #246bd2;
+  color: var(--accent-strong);
   font-size: 13px;
 }
 
@@ -227,7 +227,7 @@
 }
 
 .stage-progress .processing,.stage-list .processing {
-  background: #5b9bf2;
+  background: var(--accent-hover);
 }
 
 .stage-progress .completed,.stage-list .completed {
@@ -280,7 +280,7 @@
 }
 
 .insight-card .stats-section-heading>svg {
-  color: #3e81dd;
+  color: var(--accent);
   margin-top: 1px;
 }
 
@@ -301,7 +301,7 @@
 }
 
 .insight-list b {
-  color: #246bd2;
+  color: var(--accent-strong);
   font-size: 15px;
   line-height: 1;
 }
@@ -355,8 +355,8 @@
 }
 
 .theme-dark .kpi-icon.total {
-  background: #213d64;
-  color: #8bbcff;
+  background: var(--accent-dark-soft-strong);
+  color: var(--accent-on-dark);
 }
 
 .theme-dark .kpi-icon.household {

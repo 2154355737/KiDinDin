@@ -22,7 +22,7 @@ html[data-theme="dark"] #root {
   --dark-text: #f5f5f5;
   --dark-text-secondary: #b5b5b5;
   --dark-text-muted: #858585;
-  --dark-accent: #3b82f6;
+  --dark-accent: var(--accent);
   color: var(--dark-text);
   background: var(--dark-bg);
 }
@@ -85,7 +85,7 @@ html[data-theme="dark"] #root {
 .theme-dark .history-photo-grid button.selected,
 .theme-dark .mode-options button.active {
   background: var(--dark-active);
-  border-color: #4b74ae;
+  border-color: var(--accent-border);
 }
 
 .theme-dark .order-card.selected {
@@ -96,9 +96,13 @@ html[data-theme="dark"] #root {
 .theme-dark .stats-hero,
 .theme-dark .submit-hero,
 .theme-dark .daily-overview {
-  background: linear-gradient(145deg, #1a1a1a, #0b0b0b);
-  border: 1px solid var(--dark-border);
-  box-shadow: 0 10px 24px rgb(0 0 0 / 32%);
+  background: linear-gradient(
+    145deg,
+    var(--accent-dark-soft-strong),
+    #0b0b0b 72%
+  );
+  border: 1px solid rgb(var(--accent-rgb) / 22%);
+  box-shadow: 0 10px 24px rgb(var(--accent-rgb) / 10%);
 }
 
 .theme-dark .overview-copy > span,
@@ -114,7 +118,11 @@ html[data-theme="dark"] #root {
 }
 
 .theme-dark .rate-ring {
-  background: conic-gradient(from -90deg, #f5f5f5 0 var(--rate), rgb(255 255 255 / 18%) var(--rate) 360deg);
+  background: conic-gradient(
+    from -90deg,
+    var(--accent-on-dark) 0 var(--rate),
+    rgb(255 255 255 / 18%) var(--rate) 360deg
+  );
 }
 
 .theme-dark .rate-ring-content {
@@ -226,7 +234,7 @@ html[data-theme="dark"] #root {
 .theme-dark .stats-section-heading > b,
 .theme-dark .insight-list b,
 .theme-dark .detail-section h3 {
-  color: #6ea8ff;
+  color: var(--accent-on-dark);
 }
 
 .theme-dark .order-id,
@@ -331,13 +339,13 @@ html[data-theme="dark"] #root {
 
 .theme-dark .prepare-tabs button.active {
   background: var(--dark-active);
-  border-color: #4b74ae;
-  color: #8bb9ff;
+  border-color: var(--accent-border);
+  color: var(--accent-on-dark);
 }
 
 .theme-dark .random-button {
   background: var(--dark-active);
-  color: #8bb9ff;
+  color: var(--accent-on-dark);
 }
 
 .theme-dark .run-ring {
@@ -368,8 +376,8 @@ html[data-theme="dark"] #root {
 .theme-dark .status-待提交,
 .theme-dark .status-processing,
 .theme-dark .status-submitting {
-  color: #8bb9ff;
-  background: #1d2633;
+  color: var(--accent-on-dark);
+  background: var(--accent-dark-soft);
 }
 
 .theme-dark .status-pending {
@@ -395,7 +403,7 @@ html[data-theme="dark"] #root {
 .theme-dark .file-picker {
   background: #121212;
   border-color: var(--dark-border-strong);
-  color: #8bb9ff;
+  color: var(--accent-on-dark);
 }
 
 .theme-dark .login-history-heading span,
@@ -442,7 +450,7 @@ html[data-theme="dark"] #root {
 }
 
 .theme-dark .kpi-icon.total {
-  color: #78adff;
+  color: var(--accent-on-dark);
 }
 
 .theme-dark .kpi-icon.household {

@@ -42,8 +42,8 @@
 }
 
 .filter-panel .sort-filter-options button.active {
-  border-color: #2563eb;
-  background: #2563eb;
+  border-color: var(--accent);
+  background: var(--accent);
   color: #fff;
 }
 

@@ -53,8 +53,8 @@
   gap: 3px;
   border: 0;
   border-radius: 8px;
-  background: #e5f0ff;
-  color: #246bd2;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
   padding: 0 9px;
   font-size: 11px;
   font-weight: 750;
@@ -121,12 +121,12 @@
 
 .theme-dark .detail-exchange-log-heading b,
 .theme-dark .detail-exchange-log-list b {
-  color: #9ac4ff;
+  color: var(--accent-on-dark);
 }
 
 .theme-dark .detail-exchange-log-heading button {
-  background: #24436d;
-  color: #a8ceff;
+  background: var(--accent-dark-soft-strong);
+  color: var(--accent-on-dark);
 }
 
 .theme-dark .detail-exchange-log-list li {

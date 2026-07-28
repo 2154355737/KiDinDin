@@ -14,8 +14,8 @@
   padding: 0 9px;
   border: 1px solid #d7e5fb;
   border-radius: 999px;
-  background: #edf5ff;
-  color: #2563eb;
+  background: var(--accent-soft);
+  color: var(--accent);
   font-size: 10px;
   font-weight: 750;
   white-space: nowrap;
@@ -104,7 +104,7 @@
 
 .more-feature-primary {
   border-color: #cfe0fb;
-  background: linear-gradient(135deg, #edf5ff, #e3efff);
+  background: linear-gradient(135deg, var(--accent-soft), var(--accent-soft));
 }
 
 .more-feature-icon {
@@ -113,8 +113,8 @@
   display: grid;
   place-items: center;
   border-radius: 13px;
-  background: #edf4ff;
-  color: #2563eb;
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .more-feature-copy {
@@ -156,7 +156,7 @@
   border: 1px solid #e1e7f0;
   border-radius: 13px;
   background: #fff;
-  color: #3b6fae;
+  color: var(--accent-strong);
 }
 
 .local-data-actions > button:disabled {
@@ -191,8 +191,8 @@
   margin: 9px 1px 0;
   padding: 8px 10px;
   border-radius: 9px;
-  background: #edf5ff;
-  color: #356cae;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
   font-size: 10px;
   line-height: 1.45;
 }

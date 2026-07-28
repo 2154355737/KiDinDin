@@ -1,0 +1,72 @@
+/* 主色调色阶：主题只负责明暗，所有交互强调色统一从这里取值。 */
+
+:root,
+.accent-sky {
+  --accent: #1687d9;
+  --accent-strong: #086bb5;
+  --accent-hover: #39a0e7;
+  --accent-soft: #e3f4ff;
+  --accent-soft-strong: #cceaff;
+  --accent-border: #83c8f2;
+  --accent-on-dark: #72c7ff;
+  --accent-rgb: 22 135 217;
+}
+
+:root,
+.accent-sky,
+.accent-pink,
+.accent-green,
+.accent-purple,
+.accent-orange {
+  --accent-gradient: linear-gradient(
+    135deg,
+    var(--accent-strong),
+    var(--accent-hover)
+  );
+  --accent-dark-soft: rgb(var(--accent-rgb) / 16%);
+  --accent-dark-soft-strong: rgb(var(--accent-rgb) / 28%);
+}
+
+.accent-pink {
+  --accent: #db4f86;
+  --accent-strong: #b83269;
+  --accent-hover: #e875a1;
+  --accent-soft: #fde7f0;
+  --accent-soft-strong: #f9cddd;
+  --accent-border: #ef9fbd;
+  --accent-on-dark: #ff91bb;
+  --accent-rgb: 219 79 134;
+}
+
+.accent-green {
+  --accent: #14966f;
+  --accent-strong: #087558;
+  --accent-hover: #34ad88;
+  --accent-soft: #e0f5ed;
+  --accent-soft-strong: #c1eadb;
+  --accent-border: #79c9ae;
+  --accent-on-dark: #63d5af;
+  --accent-rgb: 20 150 111;
+}
+
+.accent-purple {
+  --accent: #8257d9;
+  --accent-strong: #6740b7;
+  --accent-hover: #9b78e4;
+  --accent-soft: #f0eaff;
+  --accent-soft-strong: #dfd3fb;
+  --accent-border: #bba5ec;
+  --accent-on-dark: #bfa4ff;
+  --accent-rgb: 130 87 217;
+}
+
+.accent-orange {
+  --accent: #e06b24;
+  --accent-strong: #b95013;
+  --accent-hover: #eb8a4f;
+  --accent-soft: #fff0e4;
+  --accent-soft-strong: #fbd9bf;
+  --accent-border: #efb183;
+  --accent-on-dark: #ffad74;
+  --accent-rgb: 224 107 36;
+}

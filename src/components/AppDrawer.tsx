@@ -3,11 +3,27 @@ import {
   useEffect,
   useRef,
   useState,
+  type Dispatch,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
+  type SetStateAction,
 } from "react";
 import { createPortal } from "react-dom";
-import type { DrawerKind, Theme, WorkOrder } from "../types/workOrder";
+import type {
+  AccentId,
+  AppearanceSettings,
+  DrawerKind,
+  ThemeId,
+  WorkOrder,
+} from "../types/workOrder";
+import {
+  accentModeOptions,
+  accentOptions,
+  getAccentLabel,
+  getThemeLabel,
+  themeModeOptions,
+  themeOptions,
+} from "../services/theme";
 import {
   fetchDeviceIdentityPreview,
   isNativeRuntime,
@@ -172,12 +188,14 @@ export function AppDrawer({
   detailAjInfo,
   detailLoading,
   detailError,
-  theme,
+  appliedTheme,
+  appliedAccent,
+  appearanceSettings,
   auth,
   libraryPhotos,
   defaultOperatorName,
   setDefaultOperatorName,
-  setTheme,
+  setAppearanceSettings,
   onCheckLog,
   onRetryLog,
   onLoadExchangeLogs,
@@ -193,12 +211,14 @@ export function AppDrawer({
   detailAjInfo: Record<string, unknown> | null;
   detailLoading: boolean;
   detailError: string | null;
-  theme: Theme;
+  appliedTheme: ThemeId;
+  appliedAccent: AccentId;
+  appearanceSettings: AppearanceSettings;
   auth: AuthStatus;
   libraryPhotos: string[];
   defaultOperatorName: string;
   setDefaultOperatorName: (value: string) => void;
-  setTheme: (value: Theme) => void;
+  setAppearanceSettings: Dispatch<SetStateAction<AppearanceSettings>>;
   onCheckLog: (id: string) => Promise<{ ok: boolean; message: string }>;
   onRetryLog: (id: string) => Promise<{ ok: boolean; message: string }>;
   onLoadExchangeLogs: (woHeaderId: string) => Promise<ExchangeLog[]>;
@@ -640,27 +660,137 @@ export function AppDrawer({
           <div className="drawer-content settings-content">
             <section className="settings-block appearance-settings">
               <div className="settings-heading">
-                <span>外观设置</span>
-                <p>选择 KiDinDin 的界面显示方式。</p>
+                <span>
+                  主题
+                  <em className="current-theme-badge">
+                    当前 · {getThemeLabel(appliedTheme)}
+                  </em>
+                </span>
+                <p>控制界面的明暗层级，可跟随设备系统或手动固定。</p>
               </div>
-              <div className="theme-select">
-                {(["system", "light", "dark"] as Theme[]).map((item) => (
+              <div className="theme-mode-select" aria-label="主题切换方式">
+                {themeModeOptions.map((option) => (
                   <button
-                    key={item}
-                    className={theme === item ? "active" : ""}
-                    onClick={() => setTheme(item)}
+                    type="button"
+                    key={option.id}
+                    className={
+                      appearanceSettings.themeMode === option.id ? "active" : ""
+                    }
+                    onClick={() =>
+                      setAppearanceSettings((current) => ({
+                        ...current,
+                        themeMode: option.id,
+                      }))
+                    }
                   >
-                    <i className={`theme-swatch ${item}`} />
+                    <b>{option.label}</b>
+                    <small>{option.description}</small>
+                  </button>
+                ))}
+              </div>
+              {appearanceSettings.themeMode === "manual" ? (
+                <div className="theme-preset-grid" aria-label="手动选择主题">
+                  {themeOptions.map((option) => (
+                    <button
+                      type="button"
+                      key={option.id}
+                      className={
+                        appearanceSettings.manualTheme === option.id
+                          ? "active"
+                          : ""
+                      }
+                      aria-pressed={
+                        appearanceSettings.manualTheme === option.id
+                      }
+                      onClick={() =>
+                        setAppearanceSettings((current) => ({
+                          ...current,
+                          manualTheme: option.id,
+                        }))
+                      }
+                    >
+                      <i className={`theme-swatch ${option.id}`} />
+                      <span>
+                        <b>{option.label}</b>
+                        <small>{option.description}</small>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </section>
+            <section className="settings-block appearance-settings">
+              <div className="settings-heading">
+                <span>
+                  主色调
+                  <em className="current-theme-badge">
+                    当前 · {getAccentLabel(appliedAccent)}
+                  </em>
+                </span>
+                <p>统一控制按钮、选中态、导航、进度和焦点高亮颜色。</p>
+              </div>
+              <div className="theme-mode-select" aria-label="主色调切换方式">
+                {accentModeOptions.map((option) => (
+                  <button
+                    type="button"
+                    key={option.id}
+                    className={
+                      appearanceSettings.accentMode === option.id
+                        ? "active"
+                        : ""
+                    }
+                    onClick={() =>
+                      setAppearanceSettings((current) => ({
+                        ...current,
+                        accentMode: option.id,
+                      }))
+                    }
+                  >
+                    <b>{option.label}</b>
+                    <small>{option.description}</small>
+                  </button>
+                ))}
+              </div>
+              <div className="accent-preset-grid" aria-label="手动选择主色调">
+                {accentOptions.map((option) => (
+                  <button
+                    type="button"
+                    key={option.id}
+                    className={
+                      appearanceSettings.accentMode === "manual" &&
+                      appearanceSettings.manualAccent === option.id
+                        ? "active"
+                        : ""
+                    }
+                    aria-pressed={
+                      appearanceSettings.accentMode === "manual" &&
+                      appearanceSettings.manualAccent === option.id
+                    }
+                    onClick={() =>
+                      setAppearanceSettings((current) => ({
+                        ...current,
+                        accentMode: "manual",
+                        manualAccent: option.id,
+                      }))
+                    }
+                  >
+                    <i className={`accent-swatch ${option.id}`} />
                     <span>
-                      {item === "system"
-                        ? "跟随系统"
-                        : item === "light"
-                          ? "浅色"
-                          : "深色"}
+                      <b>{option.label}</b>
+                      <small>{option.description}</small>
                     </span>
                   </button>
                 ))}
               </div>
+              {appearanceSettings.accentMode === "schedule" ? (
+                <div className="accent-schedule-summary">
+                  <span><i className="accent-swatch orange" />05:00</span>
+                  <span><i className="accent-swatch sky" />09:00</span>
+                  <span><i className="accent-swatch green" />13:00</span>
+                  <span><i className="accent-swatch purple" />17:00</span>
+                  <span><i className="accent-swatch pink" />21:00</span>
+                </div>
+              ) : null}
             </section>
             <section className="settings-block operator-setting">
               <div className="settings-heading">

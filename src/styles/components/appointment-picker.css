@@ -18,7 +18,7 @@
 
 .appointment-picker-trigger::after {
   content: "选择";
-  color: #3473c8;
+  color: var(--accent-strong);
   font-size: 9px;
   font-weight: 750;
 }
@@ -151,13 +151,13 @@
 }
 
 .appointment-picker-calendar button.is-today:not(.is-selected) {
-  box-shadow: inset 0 0 0 1px #8bb7f5;
-  color: #2563eb;
+  box-shadow: inset 0 0 0 1px var(--accent-border);
+  color: var(--accent);
   font-weight: 750;
 }
 
 .appointment-picker-calendar button.is-selected {
-  background: #2563eb;
+  background: var(--accent);
   color: #fff;
   font-weight: 800;
 }
@@ -231,9 +231,9 @@
   left: 4px;
   right: 4px;
   height: 44px;
-  border: 1px solid #76a8ef;
+  border: 1px solid var(--accent-border);
   border-radius: 10px;
-  background: #e8f2ff;
+  background: var(--accent-soft);
   pointer-events: none;
 }
 
@@ -253,7 +253,7 @@
 }
 
 .appointment-picker-time-wheel:focus-visible {
-  box-shadow: inset 0 0 0 2px rgb(37 99 235 / 42%);
+  box-shadow: inset 0 0 0 2px rgb(var(--accent-rgb) / 42%);
 }
 
 .appointment-picker-time-wheel button {
@@ -274,7 +274,7 @@
 }
 
 .appointment-picker-time-wheel button.is-selected {
-  color: #2563eb;
+  color: var(--accent);
   font-size: 17px;
   font-weight: 850;
   opacity: 1;
@@ -306,11 +306,11 @@
 .appointment-picker-actions .appointment-picker-today {
   padding: 0 12px;
   background: transparent;
-  color: #3473c8;
+  color: var(--accent-strong);
 }
 
 .appointment-picker-actions .appointment-picker-confirm {
-  background: #2563eb;
+  background: var(--accent);
   color: #fff;
 }
 
@@ -350,7 +350,7 @@
 
 .theme-dark .appointment-picker-calendar button.is-today:not(.is-selected),
 .theme-dark .appointment-picker-trigger::after {
-  color: #8bb9ff;
+  color: var(--accent-on-dark);
 }
 
 .theme-dark .appointment-picker-calendar button.is-selected,
@@ -382,8 +382,8 @@
 }
 
 .theme-dark .appointment-picker-time-wheel-selection {
-  border-color: #3d6091;
-  background: #17243a;
+  border-color: var(--accent-border);
+  background: var(--accent-dark-soft);
 }
 
 .theme-dark .appointment-picker-time-wheel button {
@@ -391,7 +391,7 @@
 }
 
 .theme-dark .appointment-picker-time-wheel button.is-selected {
-  color: #8bb9ff;
+  color: var(--accent-on-dark);
 }
 
 .theme-dark .appointment-picker-actions {
@@ -405,5 +405,5 @@
 
 .theme-dark .appointment-picker-actions .appointment-picker-today {
   background: transparent;
-  color: #8bb9ff;
+  color: var(--accent-on-dark);
 }
