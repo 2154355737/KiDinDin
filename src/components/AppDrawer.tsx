@@ -1,6 +1,12 @@
 import type { ExchangeLog, WorkOrderDetail } from "../services/workOrderApi";
-import type { LocalWorkOrderMeta } from "../services/localWorkOrderStore";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from "react";
+import { createPortal } from "react-dom";
 import type { DrawerKind, Theme, WorkOrder } from "../types/workOrder";
 import {
   fetchDeviceIdentityPreview,
@@ -9,7 +15,6 @@ import {
   type DeviceIdentityPreview,
 } from "../services/tauri";
 import { Icon } from "./Icon";
-import { AppointmentPicker } from "./AppointmentPicker";
 import { PhotoTile } from "./PhotoTile";
 import { StatusBadge } from "./WorkOrderList";
 
@@ -167,14 +172,12 @@ export function AppDrawer({
   detailAjInfo,
   detailLoading,
   detailError,
-  localMeta,
   theme,
   auth,
   libraryPhotos,
   defaultOperatorName,
   setDefaultOperatorName,
   setTheme,
-  onUpdateLocalMeta,
   onCheckLog,
   onRetryLog,
   onLoadExchangeLogs,
@@ -190,18 +193,12 @@ export function AppDrawer({
   detailAjInfo: Record<string, unknown> | null;
   detailLoading: boolean;
   detailError: string | null;
-  localMeta: LocalWorkOrderMeta | null;
   theme: Theme;
   auth: AuthStatus;
   libraryPhotos: string[];
   defaultOperatorName: string;
   setDefaultOperatorName: (value: string) => void;
   setTheme: (value: Theme) => void;
-  onUpdateLocalMeta: (
-    patch: Partial<
-      Pick<LocalWorkOrderMeta, "appointmentAt" | "favorite" | "note" | "pinned">
-    >,
-  ) => Promise<void>;
   onCheckLog: (id: string) => Promise<{ ok: boolean; message: string }>;
   onRetryLog: (id: string) => Promise<{ ok: boolean; message: string }>;
   onLoadExchangeLogs: (woHeaderId: string) => Promise<ExchangeLog[]>;
@@ -237,74 +234,18 @@ export function AppDrawer({
     "biometric" | "password"
   >("biometric");
   const [exportPassword, setExportPassword] = useState("");
-  const [localDraftDirty, setLocalDraftDirty] = useState(false);
-  const [localNote, setLocalNoteValue] = useState(localMeta?.note ?? "");
-  const [localAppointmentAt, setLocalAppointmentAtValue] = useState(
-    localMeta?.appointmentAt ?? "",
-  );
-  const [savingLocalMeta, setSavingLocalMeta] = useState(false);
-  const [localMetaMessage, setLocalMetaMessage] = useState("");
-  const localOrderId = useRef(order.woHeaderId);
+  const [drawerDragOffset, setDrawerDragOffset] = useState(0);
+  const [drawerDragging, setDrawerDragging] = useState(false);
+  const drawerDragStart = useRef<{ pointerId: number; startY: number; startedAt: number } | null>(null);
   const canRetryLog =
     order.backendStatusCode === "60" ||
     order.status === "日志失败" ||
     order.status === "已结束";
-  const setLocalNote = (value: string) => {
-    setLocalDraftDirty(true);
-    setLocalNoteValue(value);
-  };
-  const setLocalAppointmentAt = (value: string) => {
-    setLocalDraftDirty(true);
-    setLocalAppointmentAtValue(value);
-  };
-
-  useEffect(() => {
-    if (localOrderId.current !== order.woHeaderId) {
-      localOrderId.current = order.woHeaderId;
-      setLocalNoteValue(localMeta?.note ?? "");
-      setLocalAppointmentAtValue(localMeta?.appointmentAt ?? "");
-      setLocalDraftDirty(false);
-      setLocalMetaMessage("");
-      return;
-    }
-    if (!localDraftDirty) {
-      setLocalNoteValue(localMeta?.note ?? "");
-      setLocalAppointmentAtValue(localMeta?.appointmentAt ?? "");
-    }
-  }, [
-    localDraftDirty,
-    localMeta?.appointmentAt,
-    localMeta?.note,
-    order.woHeaderId,
-  ]);
-
   useEffect(() => {
     setExchangeLogs(null);
     setExchangeLogsLoading(false);
     setExchangeLogsError("");
   }, [order.woHeaderId]);
-
-  const updateLocalMeta = async (
-    patch: Partial<
-      Pick<LocalWorkOrderMeta, "appointmentAt" | "favorite" | "note" | "pinned">
-    >,
-    successMessage: string,
-    commitDraft = false,
-  ) => {
-    setSavingLocalMeta(true);
-    setLocalMetaMessage("");
-    try {
-      await onUpdateLocalMeta(patch);
-      if (commitDraft || patch.note !== undefined) setLocalDraftDirty(false);
-      setLocalMetaMessage(successMessage);
-    } catch (error) {
-      setLocalMetaMessage(
-        error instanceof Error ? error.message : String(error),
-      );
-    } finally {
-      setSavingLocalMeta(false);
-    }
-  };
 
   const confirmRetryLog = async () => {
     setRetryingLog(true);
@@ -332,10 +273,48 @@ export function AppDrawer({
     try {
       setExchangeLogs(await onLoadExchangeLogs(order.woHeaderId));
     } catch (error) {
-      setExchangeLogsError(error instanceof Error ? error.message : String(error));
+      setExchangeLogsError(
+        error instanceof Error ? error.message : String(error),
+      );
     } finally {
       setExchangeLogsLoading(false);
     }
+  };
+
+  const beginDrawerDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    drawerDragStart.current = { pointerId: event.pointerId, startY: event.clientY, startedAt: performance.now() };
+    setDrawerDragging(true);
+  };
+
+  const moveDrawerDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = drawerDragStart.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    setDrawerDragOffset(Math.max(0, event.clientY - drag.startY));
+  };
+
+  const finishDrawerDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = drawerDragStart.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const offset = Math.max(0, event.clientY - drag.startY);
+    const speed = offset / Math.max(performance.now() - drag.startedAt, 1);
+    drawerDragStart.current = null;
+    setDrawerDragging(false);
+    setDrawerDragOffset(0);
+    if (event.currentTarget.hasPointerCapture(event.pointerId))
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    if (offset >= 96 || (offset >= 42 && speed >= 0.8)) onClose();
+  };
+
+  const cancelDrawerDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = drawerDragStart.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    drawerDragStart.current = null;
+    setDrawerDragging(false);
+    setDrawerDragOffset(0);
+    if (event.currentTarget.hasPointerCapture(event.pointerId))
+      event.currentTarget.releasePointerCapture(event.pointerId);
   };
 
   const refreshSession = async () => {
@@ -416,8 +395,24 @@ export function AppDrawer({
 
   return (
     <div className="drawer-overlay" onClick={onClose}>
-      <section className="drawer" onClick={(event) => event.stopPropagation()}>
-        <div className="drawer-handle" />
+      <section
+        className={`drawer ${drawerDragging ? "is-dragging" : ""}`}
+        style={
+          drawerDragOffset
+            ? { transform: `translateY(${drawerDragOffset}px)` }
+            : undefined
+        }
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div
+          className="drawer-grip"
+          onPointerDown={beginDrawerDrag}
+          onPointerMove={moveDrawerDrag}
+          onPointerUp={finishDrawerDrag}
+          onPointerCancel={cancelDrawerDrag}
+        >
+          <div className="drawer-handle" />
+        </div>
         <header>
           <h2>{titles[type]}</h2>
           <button className="icon-button" onClick={onClose}>
@@ -450,91 +445,6 @@ export function AppDrawer({
               </b>
             </section>
             {detailError ? <p className="detail-error">{detailError}</p> : null}
-            <section className="local-workorder-block">
-              <div className="local-workorder-heading">
-                <div>
-                  <b>本地工单标记</b>
-                  <span>仅保存在当前设备和登录账号下</span>
-                </div>
-                <div className="local-marker-actions">
-                  <button
-                    type="button"
-                    className={localMeta?.favorite ? "active" : ""}
-                    disabled={savingLocalMeta}
-                    onClick={() =>
-                      void updateLocalMeta(
-                        { favorite: !localMeta?.favorite },
-                        localMeta?.favorite ? "已取消收藏" : "已收藏工单",
-                      )
-                    }
-                  >
-                    <Icon name="star" size={16} />
-                    收藏
-                  </button>
-                  <button
-                    type="button"
-                    className={localMeta?.pinned ? "active" : ""}
-                    disabled={savingLocalMeta}
-                    onClick={() =>
-                      void updateLocalMeta(
-                        { pinned: !localMeta?.pinned },
-                        localMeta?.pinned ? "已取消置顶" : "已置顶工单",
-                      )
-                    }
-                  >
-                    <Icon name="pin" size={16} />
-                    置顶
-                  </button>
-                </div>
-              </div>
-              <label>
-                <span>本地备注</span>
-                <textarea
-                  value={localNote}
-                  onChange={(event) => setLocalNote(event.target.value)}
-                  placeholder="例如：晚饭后上门、提前电话联系"
-                  maxLength={500}
-                />
-              </label>
-              <div className="local-workorder-field">
-                <span>预约时间</span>
-                <AppointmentPicker
-                  value={localAppointmentAt}
-                  onChange={setLocalAppointmentAt}
-                  disabled={savingLocalMeta}
-                />
-              </div>
-              <div className="local-workorder-save">
-                <button
-                  type="button"
-                  disabled={savingLocalMeta}
-                  onClick={() =>
-                    void updateLocalMeta(
-                      {
-                        appointmentAt: localAppointmentAt,
-                        note: localNote.trim(),
-                      },
-                      "本地备注与预约已保存",
-                    )
-                  }
-                >
-                  {savingLocalMeta ? "正在保存…" : "保存本地资料"}
-                </button>
-                {localAppointmentAt ? (
-                  <button
-                    type="button"
-                    disabled={savingLocalMeta}
-                    onClick={() => {
-                      setLocalAppointmentAt("");
-                      void updateLocalMeta({ appointmentAt: "" }, "已清除预约");
-                    }}
-                  >
-                    清除预约
-                  </button>
-                ) : null}
-              </div>
-              {localMetaMessage ? <p>{localMetaMessage}</p> : null}
-            </section>
             <DetailSection title="工单信息">
               <DetailRow
                 label="工单号"
@@ -645,11 +555,36 @@ export function AppDrawer({
                   onClick={() => void loadExchangeLogs()}
                 >
                   <Icon name="refresh" size={14} />
-                  {exchangeLogsLoading ? "查询中" : exchangeLogs ? "刷新" : "查看日志"}
+                  {exchangeLogsLoading
+                    ? "查询中"
+                    : exchangeLogs
+                      ? "刷新"
+                      : "查看日志"}
                 </button>
               </div>
-              {exchangeLogsError ? <p className="detail-exchange-log-error">{exchangeLogsError}</p> : null}
-              {exchangeLogs ? exchangeLogs.length ? <ol className="detail-exchange-log-list">{exchangeLogs.map((log, index) => <li key={`${text(log.createTime)}-${index}`}><div><b>{exchangeLogType(log.exchangeType)}</b><span>{text(log.createTime)}</span></div><p>{exchangeLogContent(log)}</p><small>{text(log.userName ?? log.createBy ?? log.userNumber)}</small></li>)}</ol> : <p className="detail-exchange-log-empty">暂无流转日志</p> : null}
+              {exchangeLogsError ? (
+                <p className="detail-exchange-log-error">{exchangeLogsError}</p>
+              ) : null}
+              {exchangeLogs ? (
+                exchangeLogs.length ? (
+                  <ol className="detail-exchange-log-list">
+                    {exchangeLogs.map((log, index) => (
+                      <li key={`${text(log.createTime)}-${index}`}>
+                        <div>
+                          <b>{exchangeLogType(log.exchangeType)}</b>
+                          <span>{text(log.createTime)}</span>
+                        </div>
+                        <p>{exchangeLogContent(log)}</p>
+                        <small>
+                          {text(log.userName ?? log.createBy ?? log.userNumber)}
+                        </small>
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  <p className="detail-exchange-log-empty">暂无流转日志</p>
+                )
+              ) : null}
             </section>
             <section className="detail-log-retry">
               <div>
@@ -884,41 +819,46 @@ export function AppDrawer({
             </section>
           </div>
         )}
-        {retryConfirmOpen && (
-          <div
-            className="retry-confirm-backdrop"
-            onClick={() => !retryingLog && setRetryConfirmOpen(false)}
-          >
-            <section
-              className="retry-confirm-dialog"
-              role="dialog"
-              aria-modal="true"
-              aria-label="确认补发流转日志"
-              onClick={(event) => event.stopPropagation()}
+        {retryConfirmOpen &&
+          createPortal(
+            <div
+              className="retry-confirm-backdrop"
+              onClick={(event) => {
+                event.stopPropagation();
+                if (!retryingLog) setRetryConfirmOpen(false);
+              }}
             >
-              <h3>确认创建流转日志？</h3>
-              <p>
-                刚刚未查询到“到访不遇”流转日志。确认后才会创建；提交前会再次校验，避免重复写入。
-              </p>
-              <div>
-                <button
-                  type="button"
-                  disabled={retryingLog}
-                  onClick={() => setRetryConfirmOpen(false)}
-                >
-                  取消
-                </button>
-                <button
-                  type="button"
-                  disabled={retryingLog}
-                  onClick={() => void confirmRetryLog()}
-                >
-                  {retryingLog ? "正在创建…" : "确认创建"}
-                </button>
-              </div>
-            </section>
-          </div>
-        )}
+              <section
+                className="retry-confirm-dialog"
+                role="dialog"
+                aria-modal="true"
+                aria-label="确认补发流转日志"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <h3>确认创建流转日志？</h3>
+                <p>
+                  刚刚未查询到“到访不遇”流转日志。确认后才会创建；提交前会再次校验，避免重复写入。
+                </p>
+                <div>
+                  <button
+                    type="button"
+                    disabled={retryingLog}
+                    onClick={() => setRetryConfirmOpen(false)}
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="button"
+                    disabled={retryingLog}
+                    onClick={() => void confirmRetryLog()}
+                  >
+                    {retryingLog ? "正在创建…" : "确认创建"}
+                  </button>
+                </div>
+              </section>
+            </div>,
+            document.body,
+          )}
       </section>
     </div>
   );

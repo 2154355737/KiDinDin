@@ -8,10 +8,30 @@ const primaryNavItems: Array<{ id: MainTab; label: string; icon: string }> = [
   { id: "more", label: "更多", icon: "more" },
 ];
 
-export function FilterButton({ onClick }: { onClick: () => void }) {
+export function FilterButton({
+  activeCount = 0,
+  onClick,
+}: {
+  activeCount?: number;
+  onClick: () => void;
+}) {
+  const label = activeCount
+    ? `筛选工单，已启用 ${activeCount} 个筛选`
+    : "筛选工单";
   return (
-    <button type="button" className="filter-button" aria-label="筛选工单" title="筛选" onClick={onClick}>
+    <button
+      type="button"
+      className={`filter-button ${activeCount ? "has-active-filters" : ""}`}
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+    >
       <Icon name="filter" size={19} />
+      {activeCount ? (
+        <span className="filter-count" aria-hidden="true">
+          {activeCount}
+        </span>
+      ) : null}
     </button>
   );
 }

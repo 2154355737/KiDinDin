@@ -10,6 +10,7 @@ export type WorkOrder = {
   backendStatusCode: string;
   building: string;
   unitNumber: string;
+  floorNumber: string;
   woHeaderId: string;
   woNumber: string;
   resident: string;

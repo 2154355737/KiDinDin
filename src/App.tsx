@@ -1,24 +1,20 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Suspense,
+  lazy,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { ChevronDown } from "lucide-react";
 import { onBackButtonPress } from "@tauri-apps/api/app";
-import { AppDrawer } from "./components/AppDrawer";
 import { Icon } from "./components/Icon";
 import { PrimaryNav } from "./components/Navigation";
 import { SessionExpiryNotice } from "./components/SessionExpiryNotice";
 import { HomePage } from "./pages/HomePage";
-import { LocalWorkOrdersPage } from "./pages/LocalWorkOrdersPage";
 import { LoginPage } from "./pages/LoginPage";
-import { LogAuditPage, type LogAuditResult } from "./pages/LogAuditPage";
-import { MorePage } from "./pages/MorePage";
-import { StatsPage } from "./pages/StatsPage";
-import { SubmitPage } from "./pages/SubmitPage";
-import {
-  ConfirmPage,
-  ModePage,
-  PreparePage,
-  RecordsPage,
-  RunningPage,
-} from "./pages/WorkflowPages";
+import type { LogAuditResult } from "./pages/LogAuditPage";
 import {
   configureAuthSession,
   exportAuthSession,
@@ -69,6 +65,62 @@ import {
   type WorkOrder,
   type WorkOrderStatusFilter,
 } from "./types/workOrder";
+
+const AppDrawer = lazy(() =>
+  import("./components/AppDrawer").then((module) => ({
+    default: module.AppDrawer,
+  })),
+);
+const LocalWorkOrdersPage = lazy(() =>
+  import("./pages/LocalWorkOrdersPage").then((module) => ({
+    default: module.LocalWorkOrdersPage,
+  })),
+);
+const LogAuditPage = lazy(() =>
+  import("./pages/LogAuditPage").then((module) => ({
+    default: module.LogAuditPage,
+  })),
+);
+const MorePage = lazy(() =>
+  import("./pages/MorePage").then((module) => ({
+    default: module.MorePage,
+  })),
+);
+const StatsPage = lazy(() =>
+  import("./pages/StatsPage").then((module) => ({
+    default: module.StatsPage,
+  })),
+);
+const SubmitPage = lazy(() =>
+  import("./pages/SubmitPage").then((module) => ({
+    default: module.SubmitPage,
+  })),
+);
+const ModePage = lazy(() =>
+  import("./pages/WorkflowPages").then((module) => ({
+    default: module.ModePage,
+  })),
+);
+const PreparePage = lazy(() =>
+  import("./pages/WorkflowPages").then((module) => ({
+    default: module.PreparePage,
+  })),
+);
+const ConfirmPage = lazy(() =>
+  import("./pages/WorkflowPages").then((module) => ({
+    default: module.ConfirmPage,
+  })),
+);
+const RunningPage = lazy(() =>
+  import("./pages/WorkflowPages").then((module) => ({
+    default: module.RunningPage,
+  })),
+);
+const RecordsPage = lazy(() =>
+  import("./pages/WorkflowPages").then((module) => ({
+    default: module.RecordsPage,
+  })),
+);
 
 const CLOSE_REASON_UNREACHABLE = "11";
 const EXCHANGE_TYPE_UNREACHABLE = "80";
@@ -149,6 +201,14 @@ type PendingLogRetry = {
   woNumber: string;
 };
 
+type PullRefreshGesture = {
+  axis: "pending" | "horizontal" | "vertical";
+  distance: number;
+  scroller: HTMLElement;
+  startX: number;
+  startY: number;
+};
+
 type WorkOrderSortField =
   | "original"
   | "number"
@@ -165,7 +225,7 @@ const workOrderSortOptions: Array<{
   { label: "默认", value: "original" },
   { label: "工单号", value: "number" },
   { label: "住户", value: "resident" },
-  { label: "楼栋单元", value: "location" },
+  { label: "位置/楼层", value: "location" },
   { label: "计划时间", value: "time" },
   { label: "状态", value: "status" },
 ];
@@ -214,8 +274,13 @@ function compareWorkOrders(
         left.unitNumber,
         right.unitNumber,
       );
-      return unitNumberComparison !== 0
-        ? unitNumberComparison
+      if (unitNumberComparison !== 0) return unitNumberComparison;
+      const floorComparison = naturalCollator.compare(
+        left.floorNumber,
+        right.floorNumber,
+      );
+      return floorComparison !== 0
+        ? floorComparison
         : naturalCollator.compare(left.unit, right.unit);
     }
     case "time":
@@ -291,15 +356,25 @@ function today() {
 
 function toUiOrder(source: CisWorkOrder): WorkOrder {
   const address = source.addressDetail ?? {};
-  const building = String(source.building ?? address.building ?? "未标注楼栋");
+  const building =
+    textField(source.building) ||
+    textField(address.building) ||
+    "未标注楼栋";
+  const unitNumber =
+    textField(source.unitsNumber) ||
+    textField(address.unitsNumber) ||
+    "未标注单元";
+  const floorNumber =
+    textField(source.floorNumber) ||
+    textField(address.floorNumber) ||
+    "未标注楼层";
+  const roomNumber =
+    textField(source.roomNumber) ||
+    textField(address.roomNumber) ||
+    "未标注房号";
   const unit =
-    [
-      source.building ?? address.building,
-      source.unitsNumber ?? address.unitsNumber,
-      source.floorNumber ?? address.floorNumber,
-      source.roomNumber ?? address.roomNumber,
-    ]
-      .filter(Boolean)
+    [building, unitNumber, floorNumber, roomNumber]
+      .filter((value) => value && !value.startsWith("未标注"))
       .join(" ") || "地址信息待补充";
   const backendStatusCode = String(source.statusCode ?? "");
   return {
@@ -317,9 +392,12 @@ function toUiOrder(source: CisWorkOrder): WorkOrder {
       source.contactPerson,
       source.contactPhone,
       source.addressDetailed,
+      address.addressDetailed,
       source.userNumber,
-      source.building,
-      source.roomNumber,
+      building,
+      unitNumber,
+      floorNumber,
+      roomNumber,
     ]
       .filter(Boolean)
       .join(" ")
@@ -327,9 +405,8 @@ function toUiOrder(source: CisWorkOrder): WorkOrder {
     status: getWorkOrderStatus(backendStatusCode),
     time: source.expectingDate?.slice(11, 16) || "待安排",
     unit,
-    unitNumber: String(
-      source.unitsNumber ?? address.unitsNumber ?? "未标注单元",
-    ),
+    unitNumber,
+    floorNumber,
     woHeaderId: source.woHeaderId,
     woNumber: source.woNumber,
   };
@@ -340,6 +417,7 @@ function toLocalSnapshot(order: WorkOrder): LocalWorkOrderSnapshot {
     address: order.address,
     backendStatusCode: order.backendStatusCode,
     building: order.building,
+    floorNumber: order.floorNumber,
     resident: order.resident,
     status: order.status,
     time: order.time,
@@ -367,6 +445,7 @@ function fromLocalMeta(item: LocalWorkOrderMeta): WorkOrder {
     address: snapshot.address,
     backendStatusCode: snapshot.backendStatusCode,
     building: snapshot.building,
+    floorNumber: snapshot.floorNumber,
     id: snapshot.woNumber || item.woHeaderId,
     resident: snapshot.resident,
     searchText: [
@@ -375,6 +454,7 @@ function fromLocalMeta(item: LocalWorkOrderMeta): WorkOrder {
       snapshot.address,
       snapshot.building,
       snapshot.unitNumber,
+      snapshot.floorNumber,
       item.note,
     ]
       .filter(Boolean)
@@ -491,10 +571,11 @@ export default function App() {
     useState<WorkOrderStatusFilter>("all");
   const [buildingFilter, setBuildingFilter] = useState("all");
   const [unitFilter, setUnitFilter] = useState("all");
+  const [floorFilter, setFloorFilter] = useState("all");
   const [sortField, setSortField] = useState<WorkOrderSortField>("original");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [openFilterPicker, setOpenFilterPicker] = useState<
-    "building" | "unit" | null
+    "building" | "unit" | "floor" | null
   >(null);
   const [selectedDate, setSelectedDate] = useState(today());
   const [orders, setOrders] = useState<WorkOrder[]>([]);
@@ -517,6 +598,7 @@ export default function App() {
   const pendingLogRetriesRef = useRef<Record<string, PendingLogRetry>>({});
   const localSaveLocks = useRef(new Set<string>());
   const sessionRefreshPromise = useRef<Promise<AuthStatus> | null>(null);
+  const ordersRequestSequenceRef = useRef(0);
   const [historyFiles, setHistoryFiles] = useState<Record<string, File>>({});
   const [historyMode, setHistoryMode] = useState<"manual" | "auto">("manual");
   const [submitMode, setSubmitMode] = useState<"manual" | "historical">(
@@ -543,7 +625,7 @@ export default function App() {
   );
   const [drawer, setDrawer] = useState<DrawerKind | null>(null);
   const [filterOpen, setFilterOpen] = useState(false);
-  const [loadingOrders, setLoadingOrders] = useState(false);
+  const [loadingOrders, setLoadingOrders] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [paused, setPaused] = useState(false);
@@ -563,10 +645,20 @@ export default function App() {
   const [logAuditRetryRunning, setLogAuditRetryRunning] = useState(false);
   const [pullRefreshDistance, setPullRefreshDistance] = useState(0);
   const [pullRefreshing, setPullRefreshing] = useState(false);
-  const pullRefreshStartY = useRef<number | null>(null);
+  const pullRefreshGesture = useRef<PullRefreshGesture | null>(null);
+  const pullRefreshDistanceRef = useRef(0);
   const [logAuditMessage, setLogAuditMessage] = useState("");
 
   const loggedIn = Boolean(auth?.authenticated);
+  const changeSelectedDate = useCallback(
+    (value: string) => {
+      if (value === selectedDate) return;
+      ordersRequestSequenceRef.current += 1;
+      setLoadingOrders(true);
+      setSelectedDate(value);
+    },
+    [selectedDate],
+  );
   const sessionExpiryAt = normalizeExpiryTimestamp(auth?.expiresAt);
   const sessionExpiryKey =
     sessionExpiryAt === null
@@ -630,11 +722,13 @@ export default function App() {
         (!keyword || order.searchText.includes(keyword)) &&
         matchesWorkOrderStatus(order.backendStatusCode, statusFilter) &&
         (buildingFilter === "all" || order.building === buildingFilter) &&
-        (unitFilter === "all" || order.unitNumber === unitFilter),
+        (unitFilter === "all" || order.unitNumber === unitFilter) &&
+        (floorFilter === "all" || order.floorNumber === floorFilter),
     );
     return sortWorkOrders(matchingOrders, sortField, sortDirection);
   }, [
     buildingFilter,
+    floorFilter,
     orders,
     query,
     sortDirection,
@@ -664,6 +758,29 @@ export default function App() {
       ].sort((left, right) => left.localeCompare(right, "zh-CN")),
     [buildingFilter, orders],
   );
+  const floorOptions = useMemo(
+    () =>
+      [
+        ...new Set(
+          orders
+            .filter(
+              (order) =>
+                (buildingFilter === "all" ||
+                  order.building === buildingFilter) &&
+                (unitFilter === "all" || order.unitNumber === unitFilter),
+            )
+            .map((order) => order.floorNumber)
+            .filter(Boolean),
+        ),
+      ].sort((left, right) => naturalCollator.compare(left, right)),
+    [buildingFilter, orders, unitFilter],
+  );
+  const activeFilterCount = [
+    statusFilter !== "all",
+    buildingFilter !== "all",
+    unitFilter !== "all",
+    floorFilter !== "all",
+  ].filter(Boolean).length;
   const pendingSubmitOrders = useMemo(
     () => filteredOrders.filter((order) => order.backendStatusCode === "20"),
     [filteredOrders],
@@ -714,9 +831,27 @@ export default function App() {
   );
 
   useEffect(() => {
-    if (unitFilter !== "all" && !unitOptions.includes(unitFilter))
+    if (
+      buildingFilter !== "all" &&
+      !buildingOptions.includes(buildingFilter)
+    ) {
+      setBuildingFilter("all");
       setUnitFilter("all");
+      setFloorFilter("all");
+    }
+  }, [buildingFilter, buildingOptions]);
+
+  useEffect(() => {
+    if (unitFilter !== "all" && !unitOptions.includes(unitFilter)) {
+      setUnitFilter("all");
+      setFloorFilter("all");
+    }
   }, [unitFilter, unitOptions]);
+
+  useEffect(() => {
+    if (floorFilter !== "all" && !floorOptions.includes(floorFilter))
+      setFloorFilter("all");
+  }, [floorFilter, floorOptions]);
 
   useEffect(() => {
     if (!pendingLogRetryStorageKey) {
@@ -783,10 +918,12 @@ export default function App() {
 
   const loadOrders = useCallback(async () => {
     if (!loggedIn) return;
+    const requestSequence = ++ordersRequestSequenceRef.current;
     setLoadingOrders(true);
     setLoadError(null);
     try {
       const response = await fetchWorkOrders(`${selectedDate} 00:00:00`);
+      if (requestSequence !== ordersRequestSequenceRef.current) return;
       const next = response.data
         .map(toUiOrder)
         .map((order) =>
@@ -796,16 +933,6 @@ export default function App() {
             : order,
         );
       setOrders(next);
-      setBuildingFilter((current) =>
-        current === "all" || next.some((order) => order.building === current)
-          ? current
-          : "all",
-      );
-      setUnitFilter((current) =>
-        current === "all" || next.some((order) => order.unitNumber === current)
-          ? current
-          : "all",
-      );
       setSelected((current) =>
         current.filter((id) =>
           next.some(
@@ -819,10 +946,12 @@ export default function App() {
           : (next[0]?.id ?? ""),
       );
     } catch (error) {
+      if (requestSequence !== ordersRequestSequenceRef.current) return;
       setOrders([]);
       setLoadError(messageOf(error));
     } finally {
-      setLoadingOrders(false);
+      if (requestSequence === ordersRequestSequenceRef.current)
+        setLoadingOrders(false);
     }
   }, [loggedIn, selectedDate]);
 
@@ -1028,6 +1157,7 @@ export default function App() {
     setLoginError(null);
     try {
       const status = await configureAuthSession(input);
+      setLoadingOrders(true);
       localStorage.removeItem(AUTO_LOGIN_HISTORY_STORAGE_KEY);
       const history = await fetchAuthHistory().catch(
         () => [] as AuthHistoryItem[],
@@ -1069,6 +1199,7 @@ export default function App() {
     setLoginError(null);
     try {
       const status = await restoreAuthHistory(id);
+      setLoadingOrders(true);
       localStorage.setItem(AUTO_LOGIN_HISTORY_STORAGE_KEY, id);
       setLocalAccountKey(localAccountKeyFor(status, id));
       setAuth(status);
@@ -1682,8 +1813,10 @@ export default function App() {
   };
 
   const pullRefreshEnabled =
-    (screen === "orders" && (mainTab === "home" || mainTab === "stats")) ||
-    screen === "log-audit";
+    !drawer &&
+    !filterOpen &&
+    ((screen === "orders" && (mainTab === "home" || mainTab === "stats")) ||
+      screen === "log-audit");
   const refreshCurrentPage = async () => {
     if (
       pullRefreshing ||
@@ -1698,39 +1831,95 @@ export default function App() {
       else await loadOrders();
     } finally {
       setPullRefreshing(false);
+      pullRefreshDistanceRef.current = 0;
       setPullRefreshDistance(0);
     }
+  };
+  const resetPullRefreshGesture = () => {
+    pullRefreshGesture.current = null;
+    pullRefreshDistanceRef.current = 0;
+    setPullRefreshDistance(0);
   };
   const handlePullRefreshStart = (event: React.TouchEvent<HTMLElement>) => {
     if (
       !pullRefreshEnabled ||
       pullRefreshing ||
+      event.touches.length !== 1 ||
       event.currentTarget.scrollTop > 0
     )
       return;
-    const nestedScroller = (event.target as HTMLElement).closest<HTMLElement>(
+    const target = event.target as HTMLElement;
+    if (
+      target.closest(
+        ".drawer-overlay, .filter-overlay, .date-dialog-backdrop, .appointment-picker-backdrop, .order-note-backdrop, .order-pin-popover-backdrop, .audit-retry-confirm-backdrop, [role='dialog'], [role='menu']",
+      )
+    )
+      return;
+    const nestedScroller = target.closest<HTMLElement>(
       ".order-list, .stats-record-list, .audit-record-list",
     );
-    if (nestedScroller && nestedScroller.scrollTop > 0) return;
-    pullRefreshStartY.current = event.touches[0]?.clientY ?? null;
+    if (!nestedScroller || nestedScroller.scrollTop > 0) return;
+    const touch = event.touches[0];
+    pullRefreshGesture.current = {
+      axis: "pending",
+      distance: 0,
+      scroller: nestedScroller,
+      startX: touch.clientX,
+      startY: touch.clientY,
+    };
+    pullRefreshDistanceRef.current = 0;
   };
   const handlePullRefreshMove = (event: React.TouchEvent<HTMLElement>) => {
-    if (pullRefreshStartY.current === null || pullRefreshing) return;
-    const offset =
-      (event.touches[0]?.clientY ?? pullRefreshStartY.current) -
-      pullRefreshStartY.current;
-    if (offset <= 0) {
-      setPullRefreshDistance(0);
+    const gesture = pullRefreshGesture.current;
+    if (!gesture || pullRefreshing) return;
+    if (event.touches.length !== 1) {
+      resetPullRefreshGesture();
       return;
     }
-    setPullRefreshDistance(Math.min(96, offset * 0.45));
+    if (gesture.scroller.scrollTop > 0 || event.currentTarget.scrollTop > 0) {
+      resetPullRefreshGesture();
+      return;
+    }
+    const touch = event.touches[0];
+    const deltaX = touch.clientX - gesture.startX;
+    const deltaY = touch.clientY - gesture.startY;
+    const absoluteX = Math.abs(deltaX);
+    const absoluteY = Math.abs(deltaY);
+
+    if (gesture.axis === "pending") {
+      if (Math.max(absoluteX, absoluteY) < 10) return;
+      if (absoluteX >= absoluteY * 0.9) {
+        gesture.axis = "horizontal";
+        resetPullRefreshGesture();
+        return;
+      }
+      if (deltaY <= 0 || absoluteY < absoluteX * 1.2) return;
+      gesture.axis = "vertical";
+    }
+    if (gesture.axis !== "vertical" || deltaY <= 0) return;
+    if (event.cancelable) event.preventDefault();
+    const distance = Math.min(92, Math.max(0, deltaY - 10) * 0.45);
+    gesture.distance = distance;
+    pullRefreshDistanceRef.current = distance;
+    setPullRefreshDistance(distance);
   };
-  const handlePullRefreshEnd = () => {
-    const shouldRefresh = pullRefreshDistance >= 54;
-    pullRefreshStartY.current = null;
+  const handlePullRefreshEnd = (event: React.TouchEvent<HTMLElement>) => {
+    const shouldRefresh =
+      event.touches.length === 0 &&
+      pullRefreshGesture.current?.axis === "vertical" &&
+      pullRefreshDistanceRef.current >= 60;
+    pullRefreshGesture.current = null;
+    pullRefreshDistanceRef.current = 0;
     if (shouldRefresh) void refreshCurrentPage();
     else setPullRefreshDistance(0);
   };
+  const handlePullRefreshCancel = () => resetPullRefreshGesture();
+
+  useEffect(() => {
+    pullRefreshGesture.current = null;
+    pullRefreshDistanceRef.current = 0;
+    setPullRefreshDistance(0);
+  }, [drawer, filterOpen, mainTab, screen]);
 
   const applyUpdatedAuthStatus = (status: AuthStatus) => {
     const savedHistoryId = localStorage.getItem(AUTO_LOGIN_HISTORY_STORAGE_KEY);
@@ -1783,6 +1972,7 @@ export default function App() {
   }) => exportAuthSession(input);
 
   const logout = async () => {
+    ordersRequestSequenceRef.current += 1;
     localStorage.setItem(AUTO_LOGIN_HISTORY_STORAGE_KEY, AUTO_LOGIN_DISABLED);
     const status = await logoutAuth();
     setLocalAccountKey(null);
@@ -1910,14 +2100,15 @@ export default function App() {
     <div className={`app-shell theme-${appliedTheme}`}>
       <main
         className={`phone-frame screen-${screen}`}
+        aria-busy={loadingOrders}
         onTouchStart={handlePullRefreshStart}
         onTouchMove={handlePullRefreshMove}
         onTouchEnd={handlePullRefreshEnd}
-        onTouchCancel={handlePullRefreshEnd}
+        onTouchCancel={handlePullRefreshCancel}
       >
         {pullRefreshEnabled && (
           <div
-            className={`pull-refresh-indicator ${pullRefreshing ? "refreshing" : pullRefreshDistance >= 54 ? "ready" : ""}`}
+            className={`pull-refresh-indicator ${pullRefreshing ? "refreshing" : ""} ${pullRefreshDistance > 0 && !pullRefreshing ? "pulling" : ""} ${pullRefreshDistance >= 60 ? "ready" : ""}`}
             style={{
               transform: `translate(-50%, ${pullRefreshing ? 44 : pullRefreshDistance - 48}px)`,
             }}
@@ -1926,7 +2117,7 @@ export default function App() {
             <span>
               {pullRefreshing
                 ? "正在刷新"
-                : pullRefreshDistance >= 54
+                : pullRefreshDistance >= 60
                   ? "松开刷新"
                   : "下拉刷新"}
             </span>
@@ -1980,30 +2171,59 @@ export default function App() {
             </div>
           </div>
         ) : null}
-        {screen === "orders" && mainTab === "home" && (
-          <HomePage
+        <Suspense
+          fallback={
+            <div className="route-loading" role="status" aria-live="polite">
+              正在打开页面…
+            </div>
+          }
+        >
+          {screen === "orders" && mainTab === "home" && (
+            <HomePage
             orders={filteredOrders}
+            overviewOrders={orders}
             query={query}
             date={selectedDate}
             localMetaById={localMetaById}
+            activeFilterCount={activeFilterCount}
             prioritizePinned={sortField === "original"}
+            loading={loadingOrders}
             onQueryChange={setQuery}
-            onDateChange={setSelectedDate}
+            onDateChange={changeSelectedDate}
             onOpenSettings={() => setDrawer("settings")}
             onFilter={() => setFilterOpen(true)}
+            onResetFilters={() => {
+              setStatusFilter("all");
+              setBuildingFilter("all");
+              setUnitFilter("all");
+              setFloorFilter("all");
+            }}
             onDetail={openCurrentOrderDetail}
-          />
-        )}
-        {screen === "orders" && mainTab === "stats" && (
-          <StatsPage
+            onToggleFavorite={(order) =>
+              persistLocalWorkOrder(order, {
+                favorite: !localMetaById[order.woHeaderId]?.favorite,
+              })
+            }
+            onTogglePinned={(order) =>
+              persistLocalWorkOrder(order, {
+                pinned: !localMetaById[order.woHeaderId]?.pinned,
+              })
+            }
+            onSaveNote={(order, note) =>
+              persistLocalWorkOrder(order, { note })
+            }
+            />
+          )}
+          {screen === "orders" && mainTab === "stats" && (
+            <StatsPage
             orders={orders}
             date={selectedDate}
-            onDateChange={setSelectedDate}
+            onDateChange={changeSelectedDate}
             onRetry={(id) => void retryLog(id)}
-          />
-        )}
-        {screen === "orders" && mainTab === "more" && (
-          <MorePage
+            />
+          )}
+          {screen === "orders" && mainTab === "more" && (
+            <MorePage
             items={localWorkOrders}
             busy={
               localDataBusy ||
@@ -2025,10 +2245,10 @@ export default function App() {
             onExportLocalData={exportLocalData}
             onImportLocalData={importLocalData}
             onClearLocalData={clearLocalData}
-          />
-        )}
-        {screen === "local-orders" && (
-          <LocalWorkOrdersPage
+            />
+          )}
+          {screen === "local-orders" && (
+            <LocalWorkOrdersPage
             mode="saved"
             items={localWorkOrders}
             savingIds={localSavingOrderIds}
@@ -2053,10 +2273,10 @@ export default function App() {
                 appointmentAt: null,
               })
             }
-          />
-        )}
-        {screen === "appointments" && (
-          <LocalWorkOrdersPage
+            />
+          )}
+          {screen === "appointments" && (
+            <LocalWorkOrdersPage
             mode="appointments"
             items={localWorkOrders}
             savingIds={localSavingOrderIds}
@@ -2081,10 +2301,10 @@ export default function App() {
                 appointmentAt: null,
               })
             }
-          />
-        )}
-        {screen === "log-audit" && (
-          <LogAuditPage
+            />
+          )}
+          {screen === "log-audit" && (
+            <LogAuditPage
             orders={orders}
             date={selectedDate}
             results={logAuditResults}
@@ -2093,7 +2313,7 @@ export default function App() {
             message={logAuditMessage}
             onDateChange={(value) => {
               if (logAuditRetryRunning) return;
-              setSelectedDate(value);
+              changeSelectedDate(value);
               setLogAuditResults({});
               setLogAuditMessage("");
             }}
@@ -2105,10 +2325,10 @@ export default function App() {
             onBatchRetry={(minSeconds, maxSeconds) =>
               void retryMissingAuditLogs(minSeconds, maxSeconds)
             }
-          />
-        )}
-        {screen === "mode" && (
-          <ModePage
+            />
+          )}
+          {screen === "mode" && (
+            <ModePage
             mode={submitMode}
             intervalMinSeconds={submitIntervalMinSeconds}
             intervalMaxSeconds={submitIntervalMaxSeconds}
@@ -2133,15 +2353,15 @@ export default function App() {
               setMainTab("more");
             }}
             onNext={() => setScreen("select")}
-          />
-        )}
-        {screen === "select" && (
-          <SubmitPage
+            />
+          )}
+          {screen === "select" && (
+            <SubmitPage
             orders={pendingSubmitOrders}
             selected={pendingSelectedIds}
             mode={submitMode}
             date={selectedDate}
-            onDateChange={setSelectedDate}
+            onDateChange={changeSelectedDate}
             onBack={() => setScreen("mode")}
             onFilter={() => setFilterOpen(true)}
             onToggle={toggleOrder}
@@ -2154,10 +2374,10 @@ export default function App() {
                 setScreen("prepare");
               }
             }}
-          />
-        )}
-        {screen === "prepare" && activeOrder && (
-          <PreparePage
+            />
+          )}
+          {screen === "prepare" && activeOrder && (
+            <PreparePage
             orders={selectedOrders}
             activeOrder={activeOrder}
             historyFileName={activeHistoryFile?.name ?? ""}
@@ -2167,7 +2387,7 @@ export default function App() {
             historyPhotoLoading={historyPhotoLoading}
             libraryFileName={libraryFile?.name ?? ""}
             date={selectedDate}
-            onDateChange={setSelectedDate}
+            onDateChange={changeSelectedDate}
             onBack={() => setScreen("select")}
             onSelectOrder={setActiveOrderId}
             onPickHistoryFile={(file) => {
@@ -2199,10 +2419,10 @@ export default function App() {
               }
               setScreen("confirm");
             }}
-          />
-        )}
-        {screen === "confirm" && (
-          <ConfirmPage
+            />
+          )}
+          {screen === "confirm" && (
+            <ConfirmPage
             orders={selectedOrders}
             historyFiles={historyFiles}
             libraryFile={libraryFile}
@@ -2211,54 +2431,52 @@ export default function App() {
             operatorName={operatorName}
             operatorLocked={false}
             date={selectedDate}
-            onDateChange={setSelectedDate}
+            onDateChange={changeSelectedDate}
             onBack={() => setScreen("prepare")}
             onReasonChange={setReason}
             onRemarkChange={setRemark}
             onOperatorNameChange={setCustomOperatorName}
             onStart={() => void runBatch()}
-          />
-        )}
-        {screen === "running" && (
-          <RunningPage
+            />
+          )}
+          {screen === "running" && (
+            <RunningPage
             total={batchOrders.length || selectedOrders.length}
             paused={paused}
             date={selectedDate}
-            onDateChange={setSelectedDate}
+            onDateChange={changeSelectedDate}
             onTogglePause={() => setPaused((value) => !value)}
             onFinish={() => setScreen("records")}
             current={currentIndex}
             message={runMessage}
             running={running}
-          />
-        )}
-        {screen === "records" && (
-          <RecordsPage
+            />
+          )}
+          {screen === "records" && (
+            <RecordsPage
             orders={batchOrders}
             date={selectedDate}
-            onDateChange={setSelectedDate}
+            onDateChange={changeSelectedDate}
             onBack={() => setScreen("mode")}
             onRetry={(id) => void retryLog(id)}
-          />
-        )}
-        {drawer && activeOrder && (
-          <AppDrawer
+            />
+          )}
+        </Suspense>
+        <Suspense fallback={null}>
+          {drawer && activeOrder && (
+            <AppDrawer
             type={drawer}
             order={activeOrder}
             detail={detail}
             detailAjInfo={detailAjInfo}
             detailLoading={detailLoading}
             detailError={detailError}
-            localMeta={localMetaById[activeOrder.woHeaderId] ?? null}
             theme={theme}
             auth={auth!}
             libraryPhotos={[]}
             defaultOperatorName={customOperatorName}
             setDefaultOperatorName={setCustomOperatorName}
             setTheme={setTheme}
-            onUpdateLocalMeta={(patch) =>
-              persistLocalWorkOrder(activeOrder, patch)
-            }
             onCheckLog={checkLogBeforeRetry}
             onRetryLog={retryLog}
             onLoadExchangeLogs={fetchWorkOrderExchangeLogs}
@@ -2274,8 +2492,9 @@ export default function App() {
                 setLoadError(`退出登录失败：${messageOf(error)}`),
               );
             }}
-          />
-        )}
+            />
+          )}
+        </Suspense>
         {filterOpen && (
           <div
             className="filter-overlay"
@@ -2288,9 +2507,28 @@ export default function App() {
               className="filter-panel"
               onClick={(event) => event.stopPropagation()}
             >
-              <h2>筛选工单</h2>
+              <div className="filter-panel-heading">
+                <h2>筛选工单</h2>
+                <button
+                  type="button"
+                  className="filter-reset-button"
+                  disabled={!activeFilterCount}
+                  onClick={() => {
+                    setStatusFilter("all");
+                    setBuildingFilter("all");
+                    setUnitFilter("all");
+                    setFloorFilter("all");
+                    setOpenFilterPicker(null);
+                  }}
+                >
+                  重置筛选
+                </button>
+              </div>
               <p>
-                关键词、楼栋、单元、工单状态和排序方式会叠加应用；楼栋和单元选项来自当前日期实际加载的工单。
+                关键词、楼栋、单元、楼层、工单状态和排序方式会叠加应用；位置选项来自当前日期实际加载的工单。
+                {screen === "orders" && mainTab === "home"
+                  ? " 首页会先按楼层聚合，排序同时决定楼层组及组内工单顺序。"
+                  : ""}
               </p>
               <FilterPicker
                 label="楼栋"
@@ -2306,6 +2544,7 @@ export default function App() {
                 onSelect={(value) => {
                   setBuildingFilter(value);
                   setUnitFilter("all");
+                  setFloorFilter("all");
                   setOpenFilterPicker(null);
                 }}
               />
@@ -2322,6 +2561,23 @@ export default function App() {
                 }
                 onSelect={(value) => {
                   setUnitFilter(value);
+                  setFloorFilter("all");
+                  setOpenFilterPicker(null);
+                }}
+              />
+              <FilterPicker
+                label="楼层"
+                value={floorFilter}
+                allLabel="全部楼层"
+                options={floorOptions}
+                open={openFilterPicker === "floor"}
+                onToggle={() =>
+                  setOpenFilterPicker((current) =>
+                    current === "floor" ? null : "floor",
+                  )
+                }
+                onSelect={(value) => {
+                  setFloorFilter(value);
                   setOpenFilterPicker(null);
                 }}
               />
@@ -2385,7 +2641,12 @@ export default function App() {
           </div>
         )}
         {loadingOrders ? (
-          <div className="loading-mask">正在加载工单…</div>
+          <div className="orders-loading-shield" role="status" aria-live="polite">
+            <span>
+              <Icon name="refresh" size={13} />
+              正在加载工单…
+            </span>
+          </div>
         ) : null}
         {screen === "orders" && (
           <PrimaryNav active={mainTab} onChange={setMainTab} />

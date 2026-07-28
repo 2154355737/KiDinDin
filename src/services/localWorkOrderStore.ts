@@ -5,6 +5,7 @@ export type LocalWorkOrderSnapshot = {
   address: string;
   building: string;
   unitNumber: string;
+  floorNumber: string;
   backendStatusCode: string;
   status: string;
   time: string;
@@ -95,6 +96,10 @@ function parseSnapshot(value: unknown, location: string): LocalWorkOrderSnapshot
     address: requireString(value, "address", location),
     building: requireString(value, "building", location),
     unitNumber: requireString(value, "unitNumber", location),
+    floorNumber:
+      typeof value.floorNumber === "string" && value.floorNumber.trim()
+        ? value.floorNumber
+        : "未标注楼层",
     backendStatusCode: requireString(value, "backendStatusCode", location),
     status: requireString(value, "status", location),
     time: requireString(value, "time", location),
