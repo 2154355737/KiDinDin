@@ -350,7 +350,7 @@ export function AllWorkOrdersPage({ onBack, onOpenDetail }: AllWorkOrdersPagePro
 
       {loading && !uiOrders.length ? (
         <div className="all-orders-skeletons" aria-label="正在加载全部工单">
-          {[0, 1, 2, 3].map((item) => <span key={item} className="all-orders-skeleton" />)}
+          {Array.from({ length: 10 }, (_, item) => <span key={item} className="all-orders-skeleton" />)}
         </div>
       ) : (
         <div className="all-orders-home-list" ref={listHostRef}>

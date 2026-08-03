@@ -1,6 +1,7 @@
 /* KiDinDin 全局样式入口：导入顺序即现有级联顺序，请勿随意调整。 */
 @import "./foundations/base.css";
 @import "./layout/app-shell.css";
+@import "./components/startup-splash.css";
 @import "./pages/login.css";
 @import "./components/home-controls.css";
 @import "./pages/workflow.css";

@@ -12,6 +12,7 @@ import { FilterPicker } from "./components/FilterPicker";
 import { Icon } from "./components/Icon";
 import { PrimaryNav } from "./components/Navigation";
 import { SessionExpiryNotice } from "./components/SessionExpiryNotice";
+import { StartupSplash } from "./components/StartupSplash";
 import { HomePage } from "./pages/HomePage";
 import { LoginPage } from "./pages/LoginPage";
 import type { LogAuditResult } from "./pages/LogAuditPage";
@@ -577,6 +578,7 @@ function isUnreachableExchangeLog(log: Record<string, unknown>) {
 
 export default function App() {
   const [auth, setAuth] = useState<AuthStatus | null>(null);
+  const [startupSplashVisible, setStartupSplashVisible] = useState(true);
   const [authHistory, setAuthHistory] = useState<AuthHistoryItem[]>([]);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loggingIn, setLoggingIn] = useState(false);
@@ -691,6 +693,10 @@ export default function App() {
   const [logAuditMessage, setLogAuditMessage] = useState("");
 
   const loggedIn = Boolean(auth?.authenticated);
+  const finishStartupSplash = useCallback(
+    () => setStartupSplashVisible(false),
+    [],
+  );
   const homeFloorGroupingStateKey = `${localAccountKey ?? "unidentified"}:${selectedDate}`;
   const collapsedHomeFloorGroupKeys =
     homeFloorGroupingState[homeFloorGroupingStateKey] ?? [];
@@ -2373,6 +2379,14 @@ export default function App() {
     };
   }, [handleAndroidBack]);
 
+  if (startupSplashVisible)
+    return (
+      <StartupSplash
+        accent={appliedAccent}
+        ready={auth !== null}
+        onComplete={finishStartupSplash}
+      />
+    );
   if (auth === null)
     return (
       <div

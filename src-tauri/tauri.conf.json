@@ -13,7 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "tauri-android-app",
+        "title": "KiDinDin",
         "width": 412,
         "height": 815,
         "resizable": false
