@@ -250,6 +250,8 @@ type HistoryPhotoCacheEntry = {
   photos: HistoryPhotoCandidate[];
 };
 
+type HistoryPhotoStatus = "idle" | "loading" | "ready" | "error";
+
 type PendingLogRetry = {
   createdAt: string;
   woHeaderId: string;
@@ -671,13 +673,20 @@ export default function App() {
   const [historyPhotos, setHistoryPhotos] = useState<HistoryPhotoCandidate[]>(
     [],
   );
-  const [historyPhotoLoading, setHistoryPhotoLoading] = useState(false);
+  const [historyPhotoLoadingOrderIds, setHistoryPhotoLoadingOrderIds] =
+    useState<string[]>([]);
   const [historyPhotoError, setHistoryPhotoError] = useState<string | null>(
     null,
   );
   const [historyPhotoCache, setHistoryPhotoCache] = useState<
     Record<string, HistoryPhotoCacheEntry>
   >({});
+  const [selectedHistoryPhotoIds, setSelectedHistoryPhotoIds] = useState<
+    Record<string, string>
+  >({});
+  const historyPhotoRequestsRef = useRef(
+    new Map<string, Promise<HistoryPhotoCacheEntry>>(),
+  );
   const [libraryFile, setLibraryFile] = useState<File | null>(null);
   const [reason, setReason] = useState("到访不遇-有居住痕迹");
   const [remark, setRemark] = useState("");
@@ -783,6 +792,9 @@ export default function App() {
   const activeHistoryFile = activeOrder
     ? (historyFiles[activeOrder.id] ?? null)
     : null;
+  const activeHistoryPhotoId = activeOrder
+    ? (selectedHistoryPhotoIds[activeOrder.id] ?? "")
+    : "";
   const selectedOrders = useMemo(
     () =>
       sortWorkOrders(
@@ -798,6 +810,20 @@ export default function App() {
   const pendingSelectedIds = useMemo(
     () => selectedOrders.map((order) => order.id),
     [selectedOrders],
+  );
+  const historyPhotoStatusByOrder = useMemo(
+    () =>
+      Object.fromEntries(
+        selectedOrders.map((order) => {
+          const entry = historyPhotoCache[order.id];
+          let status: HistoryPhotoStatus = "idle";
+          if (historyPhotoLoadingOrderIds.includes(order.id)) status = "loading";
+          else if (entry?.error) status = "error";
+          else if (entry?.photos.length) status = "ready";
+          return [order.id, status];
+        }),
+      ) as Record<string, HistoryPhotoStatus>,
+    [historyPhotoCache, historyPhotoLoadingOrderIds, selectedOrders],
   );
   const batchOrders = useMemo(() => {
     const orderById = new Map(orders.map((order) => [order.id, order]));
@@ -1594,21 +1620,46 @@ export default function App() {
         : [...new Set([...current, ...visibleIds])];
     });
 
-  const findHistoricalPhotos = async () => {
-    if (!activeOrder) return;
-    const orderId = activeOrder.id;
-    setHistoryMode("auto");
-    setHistoryPhotoLoading(true);
-    setHistoryPhotoError(null);
-    setHistoryPhotos([]);
-    try {
-      const current = activeOrder.raw ?? {};
+  const loadHistoricalPhotosForOrder = (
+    order: WorkOrder,
+    force = false,
+  ): Promise<HistoryPhotoCacheEntry> => {
+    const orderId = order.id;
+    const cached = historyPhotoCache[orderId];
+    if (!force && cached) return Promise.resolve(cached);
+    const existingRequest = historyPhotoRequestsRef.current.get(orderId);
+    if (existingRequest) return existingRequest;
+
+    if (force) {
+      setHistoryPhotoCache((current) => {
+        const next = { ...current };
+        delete next[orderId];
+        return next;
+      });
+      setHistoryFiles((current) => {
+        const next = { ...current };
+        delete next[orderId];
+        return next;
+      });
+      setSelectedHistoryPhotoIds((current) => {
+        const next = { ...current };
+        delete next[orderId];
+        return next;
+      });
+    }
+    setHistoryPhotoLoadingOrderIds((current) =>
+      current.includes(orderId) ? current : [...current, orderId],
+    );
+
+    const request = (async (): Promise<HistoryPhotoCacheEntry> => {
+      try {
+      const current = order.raw ?? {};
       const currentUser = (current.userinfo ?? {}) as Record<string, unknown>;
       let userinfoId =
         textField(current.userinfoId) || textField(currentUser.userInfoId);
       if (!userinfoId) {
         const detailResponse = await fetchWorkOrderDetail(
-          activeOrder.woHeaderId,
+          order.woHeaderId,
         );
         const header = (detailResponse.data.tcisWoHeaderDto ?? {}) as Record<
           string,
@@ -1625,7 +1676,7 @@ export default function App() {
       const candidates = historyOrders
         .filter(
           (item) =>
-            textField(item.woHeaderId) !== activeOrder.woHeaderId &&
+            textField(item.woHeaderId) !== order.woHeaderId &&
             textField(item.statusCode) === "60",
         )
         .sort(
@@ -1637,7 +1688,7 @@ export default function App() {
         const historyId = textField(historyOrder.woHeaderId);
         if (!historyId) continue;
         const logs = await fetchWorkOrderExchangeLogs(historyId);
-        if (!logs.some((log) => JSON.stringify(log).includes("到访不遇")))
+        if (!logs.some((log) => isUnreachableExchangeLog(log)))
           continue;
 
         for (const bizId of photoBizIds(historyOrder)) {
@@ -1653,7 +1704,7 @@ export default function App() {
                 return {
                   file,
                   historyLabel: textField(historyOrder.woNumber) || historyId,
-                  id: `${historyId}-${attachment.attachId ?? attachment.downloadFilePath ?? index}`,
+                  id: `${historyId}:${bizId}:${textField(attachment.attachId) || textField(attachment.downloadFilePath) || index}`,
                   originalName: textField(attachment.fileName) || file.name,
                   previewUrl: URL.createObjectURL(file),
                 };
@@ -1663,44 +1714,96 @@ export default function App() {
             result.status === "fulfilled" ? [result.value] : [],
           );
           if (photos.length) {
-            setHistoryPhotos(photos);
+            const entry = { error: null, photos };
             setHistoryPhotoCache((current) => ({
               ...current,
-              [orderId]: { error: null, photos },
+              [orderId]: entry,
             }));
-            return;
+            return entry;
           }
         }
       }
       throw new Error(
         "已检查历史已结束工单，但未找到含“到访不遇”日志的可下载照片",
       );
-    } catch (error) {
-      const message = messageOf(error);
-      setHistoryPhotoError(message);
-      setHistoryPhotoCache((current) => ({
-        ...current,
-        [orderId]: { error: message, photos: [] },
-      }));
-      setHistoryFiles((current) => {
-        const next = { ...current };
-        delete next[orderId];
-        return next;
-      });
-      const remainingOrders = selectedOrders.filter(
-        (order) => order.id !== orderId,
-      );
-      setSelected((current) => current.filter((id) => id !== orderId));
-      if (remainingOrders.length) {
-        setActiveOrderId(remainingOrders[0].id);
-      } else {
-        setLoadError(
-          `工单 ${activeOrder.woNumber} 没有可用的历史到访不遇照片，已取消提交队列`,
+      } catch (error) {
+        const entry = { error: messageOf(error), photos: [] };
+        setHistoryPhotoCache((current) => ({
+          ...current,
+          [orderId]: entry,
+        }));
+        setHistoryFiles((current) => {
+          const next = { ...current };
+          delete next[orderId];
+          return next;
+        });
+        setSelectedHistoryPhotoIds((current) => {
+          const next = { ...current };
+          delete next[orderId];
+          return next;
+        });
+        return entry;
+      } finally {
+        historyPhotoRequestsRef.current.delete(orderId);
+        setHistoryPhotoLoadingOrderIds((current) =>
+          current.filter((id) => id !== orderId),
         );
-        setScreen("select");
       }
-    } finally {
-      setHistoryPhotoLoading(false);
+    })();
+    historyPhotoRequestsRef.current.set(orderId, request);
+    return request;
+  };
+
+  const findHistoricalPhotos = async (force = true) => {
+    if (!activeOrder) return;
+    setHistoryMode("auto");
+    if (force) {
+      setHistoryPhotoError(null);
+      setHistoryPhotos([]);
+    }
+    await loadHistoricalPhotosForOrder(activeOrder, force);
+  };
+
+  const prefetchHistoricalPhotos = async (targetOrders: WorkOrder[]) => {
+    const queue = targetOrders.filter(
+      (order) => !historyPhotoCache[order.id]?.photos.length,
+    );
+    if (!queue.length) return;
+
+    const results = new Map<string, HistoryPhotoCacheEntry>();
+    let nextIndex = 0;
+    const worker = async () => {
+      while (nextIndex < queue.length) {
+        const order = queue[nextIndex];
+        nextIndex += 1;
+        const entry = await loadHistoricalPhotosForOrder(
+          order,
+          Boolean(historyPhotoCache[order.id]?.error),
+        );
+        results.set(order.id, entry);
+      }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(2, queue.length) }, () => worker()),
+    );
+
+    const failedIds = new Set(
+      [...results].filter(([, entry]) => entry.error).map(([id]) => id),
+    );
+    if (!failedIds.size) return;
+    setSelected((current) => current.filter((id) => !failedIds.has(id)));
+    const remainingOrders = targetOrders.filter(
+      (order) => !failedIds.has(order.id),
+    );
+    if (remainingOrders.length) {
+      if (failedIds.has(targetOrders[0]?.id))
+        setActiveOrderId(remainingOrders[0].id);
+      setLoadError(
+        `${failedIds.size} 个工单未找到可用的历史到访不遇照片，已自动取消勾选`,
+      );
+    } else {
+      setLoadError("所选工单均未找到可用的历史到访不遇照片，已取消提交队列");
+      setScreen("select");
     }
   };
 
@@ -1709,16 +1812,16 @@ export default function App() {
       screen !== "prepare" ||
       historyMode !== "auto" ||
       !activeOrder ||
-      historyPhotoLoading ||
+      historyPhotoLoadingOrderIds.includes(activeOrder.id) ||
       historyPhotoCache[activeOrder.id]
     )
       return;
-    void findHistoricalPhotos();
+    void findHistoricalPhotos(false);
   }, [
     activeOrder,
     historyMode,
     historyPhotoCache,
-    historyPhotoLoading,
+    historyPhotoLoadingOrderIds,
     screen,
   ]);
 
@@ -2602,6 +2705,8 @@ export default function App() {
                 setActiveOrderId(selectedOrders[0].id);
                 setHistoryMode(submitMode === "historical" ? "auto" : "manual");
                 setScreen("prepare");
+                if (submitMode === "historical")
+                  void prefetchHistoricalPhotos(selectedOrders);
               }
             }}
             />
@@ -2611,10 +2716,14 @@ export default function App() {
             orders={selectedOrders}
             activeOrder={activeOrder}
             historyFileName={activeHistoryFile?.name ?? ""}
+            selectedHistoryPhotoId={activeHistoryPhotoId}
             historyMode={historyMode}
             historyPhotos={historyPhotos}
             historyPhotoError={historyPhotoError}
-            historyPhotoLoading={historyPhotoLoading}
+            historyPhotoLoading={historyPhotoLoadingOrderIds.includes(
+              activeOrder.id,
+            )}
+            historyPhotoStatusByOrder={historyPhotoStatusByOrder}
             libraryFileName={libraryFile?.name ?? ""}
             date={selectedDate}
             onDateChange={changeSelectedDate}
@@ -2622,6 +2731,11 @@ export default function App() {
             onSelectOrder={setActiveOrderId}
             onPickHistoryFile={(file) => {
               setHistoryMode("manual");
+              setSelectedHistoryPhotoIds((current) => {
+                const next = { ...current };
+                delete next[activeOrder.id];
+                return next;
+              });
               setHistoryFiles((current) => {
                 const next = { ...current };
                 if (file) next[activeOrder.id] = file;
@@ -2636,6 +2750,10 @@ export default function App() {
               setHistoryFiles((current) => ({
                 ...current,
                 [activeOrder.id]: photo.file,
+              }));
+              setSelectedHistoryPhotoIds((current) => ({
+                ...current,
+                [activeOrder.id]: photo.id,
               }));
             }}
             onPickLibraryFile={setLibraryFile}

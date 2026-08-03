@@ -1,4 +1,7 @@
 <resources>
-    <string name="app_name">"tauri-android-app"</string>
-    <string name="main_activity_title">"tauri-android-app"</string>
+    <string name="app_name">KiDinDin</string>
+    <string name="main_activity_title">KiDinDin</string>
+    <string name="background_service_channel_name">后台任务保护</string>
+    <string name="background_service_title">KiDinDin 正在保持后台运行</string>
+    <string name="background_service_text">保护照片拉取与批量工单任务，点按返回应用</string>
 </resources>
