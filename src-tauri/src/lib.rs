@@ -5,6 +5,7 @@ use serde_json::Value;
 use std::{fs, path::PathBuf, sync::Mutex, time::{SystemTime, UNIX_EPOCH}};
 use tauri::{AppHandle, Manager, State};
 use uuid::Uuid;
+mod vacant_room;
 #[cfg(mobile)]
 use tauri_plugin_biometric::{AuthOptions, BiometricExt};
 
@@ -501,19 +502,14 @@ fn is_mobile_runtime() -> bool {
 }
 
 #[tauri::command]
-async fn cis_download_file(path: String, file_name: String, state: State<'_, CisState>) -> Result<DownloadedFile, String> {
+async fn cis_download_file(
+    path: String,
+    file_name: String,
+    image_state: State<'_, vacant_room::VacantRoomImageState>,
+) -> Result<DownloadedFile, String> {
     if path.trim().is_empty() { return Err("图片下载地址为空".into()); }
-    let session = state.session.lock().map_err(|_| "会话锁定失败")?.clone().ok_or_else(|| "登录已失效，请重新粘贴登录凭据".to_string())?;
-    let response = apply_headers(state.client.get(request_url(&session, &path)), &session, false)
-        .send().await.map_err(|error| format!("下载图片失败：{error}"))?;
-    let status = response.status();
-    if !status.is_success() {
-        let text = response.text().await.unwrap_or_default();
-        return Err(format!("下载图片返回 {status}：{}", text.chars().take(200).collect::<String>()));
-    }
-    let mime = response.headers().get(header::CONTENT_TYPE).and_then(|value| value.to_str().ok()).unwrap_or("image/jpeg").split(';').next().unwrap_or("image/jpeg").to_string();
-    let bytes = response.bytes().await.map_err(|error| format!("读取图片失败：{error}"))?;
-    Ok(DownloadedFile { base64: STANDARD.encode(bytes), mime, name: file_name })
+    let (bytes, _, mime) = image_state.download_image(&path).await?;
+    Ok(DownloadedFile { base64: STANDARD.encode(bytes), mime: mime.into(), name: file_name })
 }
 
 #[tauri::command]
@@ -523,6 +519,9 @@ async fn cis_request(
     body: Option<Value>,
     state: State<'_, CisState>,
 ) -> Result<Value, String> {
+    if !path.starts_with("/api/") {
+        return Err("业务请求只允许使用相对 /api/ 路径".into());
+    }
     let session = state.session.lock().map_err(|_| "会话锁定失败")?.clone().ok_or_else(|| "登录已失效，请重新粘贴登录凭据".to_string())?;
     let method = Method::from_bytes(method.as_bytes()).map_err(|_| "不支持的请求方法")?;
     let mut request = apply_headers(state.client.request(method, request_url(&session, &path)), &session, false).header(header::ACCEPT, "application/json, text/plain, */*");
@@ -556,11 +555,13 @@ async fn cis_upload_files(files: Vec<UploadFile>, biz_id: Option<String>, state:
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init());
+        .plugin(tauri_plugin_opener::init())
+        .plugin(vacant_room::init());
     #[cfg(mobile)]
     let builder = builder.plugin(tauri_plugin_biometric::init());
     builder
         .manage(CisState::default())
+        .manage(vacant_room::VacantRoomImageState::default())
         .invoke_handler(tauri::generate_handler![
             cis_auth_status,
             cis_configure_session,
@@ -573,6 +574,9 @@ pub fn run() {
             device_identity_preview,
             is_mobile_runtime,
             cis_download_file,
+            vacant_room::cis_cache_vacant_room_image,
+            vacant_room::clear_vacant_room_image_cache,
+            vacant_room::save_vacant_room_images,
             cis_request,
             cis_upload_files
         ])

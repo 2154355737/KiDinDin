@@ -7,8 +7,8 @@ import {
   useRef,
   useState,
 } from "react";
-import { ChevronDown } from "lucide-react";
 import { onBackButtonPress } from "@tauri-apps/api/app";
+import { FilterPicker } from "./components/FilterPicker";
 import { Icon } from "./components/Icon";
 import { PrimaryNav } from "./components/Navigation";
 import { SessionExpiryNotice } from "./components/SessionExpiryNotice";
@@ -65,6 +65,11 @@ import {
   resolveTheme,
 } from "./services/theme";
 import {
+  APP_SETTINGS_STORAGE_KEY,
+  loadAppSettings,
+  type AppSettings,
+} from "./services/appSettings";
+import {
   getWorkOrderStatus,
   matchesWorkOrderStatus,
   workOrderStatusOptions,
@@ -95,6 +100,26 @@ const LogAuditPage = lazy(() =>
 const MorePage = lazy(() =>
   import("./pages/MorePage").then((module) => ({
     default: module.MorePage,
+  })),
+);
+const AllWorkOrdersPage = lazy(() =>
+  import("./pages/AllWorkOrdersPage").then((module) => ({
+    default: module.AllWorkOrdersPage,
+  })),
+);
+const VacantRoomPage = lazy(() =>
+  import("./pages/VacantRoomPage").then((module) => ({
+    default: module.VacantRoomPage,
+  })),
+);
+const VacantRoomFillPage = lazy(() =>
+  import("./pages/VacantRoomFillPage").then((module) => ({
+    default: module.VacantRoomFillPage,
+  })),
+);
+const SettingsPage = lazy(() =>
+  import("./pages/SettingsPage").then((module) => ({
+    default: module.SettingsPage,
   })),
 );
 const StatsPage = lazy(() =>
@@ -550,64 +575,6 @@ function isUnreachableExchangeLog(log: Record<string, unknown>) {
   );
 }
 
-function FilterPicker({
-  label,
-  value,
-  allLabel,
-  options,
-  open,
-  onToggle,
-  onSelect,
-}: {
-  label: string;
-  value: string;
-  allLabel: string;
-  options: string[];
-  open: boolean;
-  onToggle: () => void;
-  onSelect: (value: string) => void;
-}) {
-  return (
-    <div className="filter-picker">
-      <span>{label}</span>
-      <button
-        type="button"
-        className="filter-picker-trigger"
-        onClick={onToggle}
-        aria-expanded={open}
-      >
-        {value === "all" ? allLabel : value}
-        <ChevronDown
-          className="filter-picker-icon"
-          size={16}
-          strokeWidth={2.2}
-        />
-      </button>
-      {open && (
-        <div className="filter-picker-menu">
-          <button
-            type="button"
-            className={value === "all" ? "active" : ""}
-            onClick={() => onSelect("all")}
-          >
-            {allLabel}
-          </button>
-          {options.map((option) => (
-            <button
-              type="button"
-              key={option}
-              className={value === option ? "active" : ""}
-              onClick={() => onSelect(option)}
-            >
-              {option}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function App() {
   const [auth, setAuth] = useState<AuthStatus | null>(null);
   const [authHistory, setAuthHistory] = useState<AuthHistoryItem[]>([]);
@@ -624,6 +591,9 @@ export default function App() {
   const [mainTab, setMainTab] = useState<MainTab>("home");
   const [appearanceSettings, setAppearanceSettings] =
     useState<AppearanceSettings>(loadAppearanceSettings);
+  const [appSettings, setAppSettings] =
+    useState<AppSettings>(loadAppSettings);
+  const settingsReturnTabRef = useRef<MainTab>("more");
   const [appearanceClock, setAppearanceClock] = useState(() => Date.now());
   const [systemDark, setSystemDark] = useState(
     () => window.matchMedia("(prefers-color-scheme: dark)").matches,
@@ -1083,6 +1053,9 @@ export default function App() {
       JSON.stringify(appearanceSettings),
     );
   }, [appearanceSettings]);
+  useEffect(() => {
+    localStorage.setItem(APP_SETTINGS_STORAGE_KEY, JSON.stringify(appSettings));
+  }, [appSettings]);
   useEffect(() => {
     if (appearanceSettings.accentMode !== "schedule") return;
     const syncClock = () => setAppearanceClock(Date.now());
@@ -2356,8 +2329,15 @@ export default function App() {
       case "local-orders":
       case "appointments":
       case "log-audit":
+      case "vacant-room":
+      case "vacant-room-fill":
+      case "all-work-orders":
         setScreen("orders");
         setMainTab("more");
+        return;
+      case "settings":
+        setScreen("orders");
+        setMainTab(settingsReturnTabRef.current);
         return;
       case "running":
         if (!running) setScreen("records");
@@ -2427,7 +2407,7 @@ export default function App() {
       className={`app-shell theme-${appliedTheme} accent-${appliedAccent}`}
     >
       <main
-        className={`phone-frame screen-${screen}`}
+        className={`phone-frame screen-${screen} density-${appSettings.display.density} motion-${appSettings.display.motion}`}
         aria-busy={loadingOrders}
         inert={loadingOrders}
         onTouchStart={handlePullRefreshStart}
@@ -2564,10 +2544,13 @@ export default function App() {
               localSavingOrderIds.length > 0
             }
             message={localDataMessage}
+            onOpenAllWorkOrders={() => setScreen("all-work-orders")}
             onOpenBatchSubmit={() => {
               setLocalDetailOrder(null);
               setScreen("mode");
             }}
+            onOpenVacantRoom={() => setScreen("vacant-room")}
+            onOpenVacantRoomFill={() => setScreen("vacant-room-fill")}
             onOpenLogAudit={() => {
               setLogAuditResults({});
               setLogAuditMessage("");
@@ -2575,6 +2558,68 @@ export default function App() {
             }}
             onOpenSaved={() => setScreen("local-orders")}
             onOpenAppointments={() => setScreen("appointments")}
+            onOpenSettings={() => {
+              settingsReturnTabRef.current = "more";
+              setScreen("settings");
+            }}
+            showToolDescriptions={appSettings.display.showToolDescriptions}
+            onExportLocalData={exportLocalData}
+            onImportLocalData={importLocalData}
+            onClearLocalData={clearLocalData}
+            />
+          )}
+          {screen === "vacant-room" && (
+            <VacantRoomPage
+            autoSelectImages={appSettings.vacantRoom.autoSelectImages}
+            autoSelectOrders={appSettings.vacantRoom.autoSelectOrders}
+            orders={orders}
+            date={selectedDate}
+            onDateChange={changeSelectedDate}
+            onBack={() => {
+              setScreen("orders");
+              setMainTab("more");
+            }}
+            />
+          )}
+          {screen === "all-work-orders" && (
+            <AllWorkOrdersPage
+            onBack={() => {
+              setScreen("orders");
+              setMainTab("more");
+            }}
+            onOpenDetail={(source) => openCurrentOrderDetail(toUiOrder(source))}
+            />
+          )}
+          {screen === "vacant-room-fill" && (
+            <VacantRoomFillPage
+            autoSelectOrders={appSettings.vacantRoom.fillAutoSelectOrders}
+            defaultIntervalSeconds={appSettings.vacantRoom.fillIntervalSeconds}
+            orders={orders}
+            date={selectedDate}
+            onDateChange={changeSelectedDate}
+            onBack={() => {
+              setScreen("orders");
+              setMainTab("more");
+            }}
+            />
+          )}
+          {screen === "settings" && (
+            <SettingsPage
+            accountLabel={auth!.username ?? auth!.employeeNumber ?? "当前账号"}
+            appearanceSettings={appearanceSettings}
+            appSettings={appSettings}
+            defaultOperatorName={customOperatorName}
+            localDataBusy={localDataBusy}
+            localDataMessage={localDataMessage}
+            localWorkOrderCount={localWorkOrders.length}
+            setAppearanceSettings={setAppearanceSettings}
+            setAppSettings={setAppSettings}
+            setDefaultOperatorName={setCustomOperatorName}
+            onBack={() => {
+              setScreen("orders");
+              setMainTab(settingsReturnTabRef.current);
+            }}
+            onOpenQuickConfig={() => setDrawer("settings")}
             onExportLocalData={exportLocalData}
             onImportLocalData={importLocalData}
             onClearLocalData={clearLocalData}

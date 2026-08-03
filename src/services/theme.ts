@@ -112,24 +112,30 @@ export function loadAppearanceSettings(): AppearanceSettings {
   try {
     const raw = localStorage.getItem(APPEARANCE_STORAGE_KEY);
     if (!raw) return migrateLegacySettings() ?? defaultAppearanceSettings;
-    const value = JSON.parse(raw) as Partial<AppearanceSettings>;
-    return {
-      themeMode: isThemeMode(value.themeMode)
-        ? value.themeMode
-        : defaultAppearanceSettings.themeMode,
-      manualTheme: isThemeId(value.manualTheme)
-        ? value.manualTheme
-        : defaultAppearanceSettings.manualTheme,
-      accentMode: isAccentMode(value.accentMode)
-        ? value.accentMode
-        : defaultAppearanceSettings.accentMode,
-      manualAccent: isAccentId(value.manualAccent)
-        ? value.manualAccent
-        : defaultAppearanceSettings.manualAccent,
-    };
+    return normalizeAppearanceSettings(JSON.parse(raw));
   } catch {
     return defaultAppearanceSettings;
   }
+}
+
+export function normalizeAppearanceSettings(value: unknown): AppearanceSettings {
+  const candidate = value && typeof value === "object"
+    ? value as Partial<AppearanceSettings>
+    : {};
+  return {
+    themeMode: isThemeMode(candidate.themeMode)
+      ? candidate.themeMode
+      : defaultAppearanceSettings.themeMode,
+    manualTheme: isThemeId(candidate.manualTheme)
+      ? candidate.manualTheme
+      : defaultAppearanceSettings.manualTheme,
+    accentMode: isAccentMode(candidate.accentMode)
+      ? candidate.accentMode
+      : defaultAppearanceSettings.accentMode,
+    manualAccent: isAccentId(candidate.manualAccent)
+      ? candidate.manualAccent
+      : defaultAppearanceSettings.manualAccent,
+  };
 }
 
 export function resolveTheme(

@@ -231,7 +231,7 @@ export function AppDrawer({
   onClose: () => void;
   onLogout: () => void;
 }) {
-  const titles = { detail: "工单详情", gallery: "本机图库", settings: "设置" };
+  const titles = { detail: "工单详情", gallery: "本机图库", settings: "快速配置" };
   const header = asObject(detail?.tcisWoHeaderDto);
   const address = asObject(header.addressDetail);
   const userInfo = asObject(header.userinfo);

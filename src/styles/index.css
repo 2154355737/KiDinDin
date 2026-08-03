@@ -7,8 +7,12 @@
 @import "./pages/stats-submit.css";
 @import "./components/overlays.css";
 @import "./pages/settings.css";
+@import "./pages/settings-page.css";
 @import "./pages/stats.css";
 @import "./pages/more.css";
+@import "./pages/all-work-orders.css";
+@import "./pages/vacant-room.css";
+@import "./pages/vacant-room-fill.css";
 @import "./pages/local-work-orders.css";
 @import "./components/appointment-picker.css";
 @import "./components/navigation.css";

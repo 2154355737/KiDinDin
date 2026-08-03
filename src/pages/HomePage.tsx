@@ -181,7 +181,8 @@ export function HomePage({
           <button
             className="icon-button"
             onClick={onOpenSettings}
-            aria-label="设置"
+            aria-label="快速配置"
+            title="快速配置"
           >
             <Icon name="settings" />
           </button>

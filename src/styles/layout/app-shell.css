@@ -99,6 +99,11 @@
   padding-bottom: calc(96px + env(safe-area-inset-bottom));
 }
 
+.phone-frame.screen-vacant-room,
+.phone-frame.screen-vacant-room-fill {
+  padding-bottom: calc(142px + env(safe-area-inset-bottom));
+}
+
 .theme-dark {
   color: #eaf0ff;
   background: radial-gradient(circle at 50% -10%, #233559, transparent 42%), #111827;

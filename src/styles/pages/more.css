@@ -81,6 +81,63 @@
   gap: 8px;
 }
 
+.more-tool-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.more-tool-grid .more-feature-card {
+  min-width: 0;
+  min-height: 90px;
+  grid-template-columns: 1fr;
+  place-items: center;
+  align-content: center;
+  gap: 5px;
+  padding: 9px 4px 7px;
+  text-align: center;
+}
+
+.more-tool-grid .more-feature-card > .icon:last-child {
+  display: none;
+}
+
+.more-tool-grid .more-feature-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+}
+
+.more-tool-grid .more-feature-copy {
+  width: 100%;
+  place-items: center;
+  gap: 3px;
+}
+
+.more-tool-grid .more-feature-copy b {
+  font-size: 11px;
+}
+
+.more-tool-grid .more-feature-copy small {
+  width: 100%;
+  min-height: 20px;
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 7px;
+  line-height: 1.4;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.more-tool-grid.hide-descriptions .more-feature-card {
+  min-height: 72px;
+}
+
+.more-tool-grid.hide-descriptions .more-feature-copy small {
+  display: none;
+}
+
 /* 首页工单行微调 */
 
 .order-card {
@@ -100,11 +157,6 @@
   background: #fff;
   color: #26364d;
   text-align: left;
-}
-
-.more-feature-primary {
-  border-color: #cfe0fb;
-  background: linear-gradient(135deg, var(--accent-soft), var(--accent-soft));
 }
 
 .more-feature-icon {

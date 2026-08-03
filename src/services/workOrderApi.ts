@@ -26,6 +26,18 @@ export type CisWorkOrder = {
   unitsNumber?: string | null;
   floorNumber?: string | null;
   roomNumber?: string | null;
+  createTime?: string | null;
+  updateTime?: string | null;
+  woName?: string | null;
+  woMainType?: string | null;
+  woMainTypeName?: string | null;
+  woDetailType?: string | null;
+  woDetailTypeName?: string | null;
+  receivingTeam?: string | null;
+  receivingTeamName?: string | null;
+  charegeOfPersonName?: string | null;
+  contactPhone?: string | null;
+  userNumber?: string | null;
   addressDetail?: CisAddress | null;
   [key: string]: unknown;
 };
@@ -37,6 +49,20 @@ export type WorkOrderDetail = {
   tcisWoLineDtoList?: unknown[] | null;
   tcisWoMaterialDtoList?: unknown[] | null;
   [key: string]: unknown;
+};
+
+export type WorkOrderNailInfo = {
+  tcisWoActSetDto?: Record<string, unknown> | null;
+  tcisWorkOrderDto?: WorkOrderDetail | null;
+  [key: string]: unknown;
+};
+
+export type WorkOrderActSavePayload = {
+  tcisWoHeaderDto: {
+    woHeaderId: string;
+    woYear: number;
+  };
+  tcisWoLineDtoList: unknown[];
 };
 
 export type UploadedFile = {
@@ -76,12 +102,51 @@ const paths = {
   userAjInfo: "/api/yhbz/bzUserInfo/detailForAj/",
   fileList: "/api/appsys/file/list",
   history: "/api/workorder/tcisworkorder/newCriteria",
+  allWorkOrders: "/api/workorder/tcisworkorder/newCriteriaHandle",
   household: "/api/workorder/tcisworkorderAj/updateLastHouseholdTime",
   notify: "/api/appinterface/cem/custom/orderStatusNotify",
   close: "/api/workorder/tcisworkorder/close4SecurityCheck",
   exchange: "/api/workorder/exchange/log",
   exchangeQuery: "/api/workorder/exchange/log/query_by_wo",
 } as const;
+
+export type AllWorkOrderFilters = {
+  dateCreateEnd: string;
+  dateCreateStart: string;
+  detailType: string;
+  mainType: string;
+  operatorFlag: "N";
+  receivingTeam: string;
+  statusCodes: string[];
+};
+
+export type AllWorkOrderPage = {
+  pageIndex: number;
+  pageSize: number;
+  pages: number;
+  records: CisWorkOrder[];
+  total: number;
+};
+
+export const ALL_WORK_ORDER_ORG_ID = "1011";
+export const ALL_WORK_ORDER_RECEIVING_TEAMS = [
+  "10110008", "10110009", "10110010", "10110011", "10110015",
+  "10110301", "10110302", "10110303", "10110304", "10110305",
+  "10110306", "10110307", "10110308", "10110309", "10110310",
+  "10110311", "10110312", "10110313", "10110314", "10110315",
+  "10110316", "10110317", "10110319", "10110321", "10110323",
+  "10110325", "10110327", "10110329", "10110331", "10110333",
+  "10110336", "10110337", "10140017", "10110338",
+  "PRODUCT2024112100035", "PRODUCT2024112100026", "PRODUCT2024112100028",
+  "PRODUCT2024112100029", "PRODUCT2024112100030", "PRODUCT2024112100031",
+  "PRODUCT2024112100032", "PRODUCT2024112100033", "PRODUCT2024112100034",
+  "PRODUCT2025041400038", "PRODUCT2025041400039", "PRODUCT2025041400040",
+  "PRODUCT2025041400041", "PRODUCT2025041400042", "PRODUCT2025041400043",
+  "PRODUCT2025041400044", "PRODUCT2025041400045", "PRODUCT2025053000024",
+  "PRODUCT2025053000025", "PRODUCT2025053000026", "PRODUCT2025053000027",
+  "PRODUCT2025053000028", "PRODUCT2025053000029", "PRODUCT2025053000030",
+  "PRODUCT2025053000031", "PRODUCT2025060500002",
+] as const;
 
 async function request<T>(path: string, method: string, body?: unknown): Promise<ApiEnvelope<T>> {
   const payload = await nativeRequest(path, method, body) as ApiEnvelope<T>;
@@ -100,12 +165,72 @@ export function fetchWorkOrders(expectingDate: string) {
   return request<CisWorkOrder[]>(paths.list, "POST", { expectingDate });
 }
 
+function pageNumber(value: unknown, fallback: number) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+export async function fetchAllWorkOrders(
+  filters: AllWorkOrderFilters,
+  pageIndex: number,
+  pageSize: number,
+  sortDirection: "asc" | "desc" = "desc",
+): Promise<AllWorkOrderPage> {
+  const queryInfo: Record<string, unknown> = {
+    statusCodeList: filters.statusCodes,
+    operatorFlag: filters.operatorFlag,
+    woMainType: filters.mainType,
+    dateCreateStart: `${filters.dateCreateStart} 00:00:00`,
+    dateCreateEnd: `${filters.dateCreateEnd} 23:59:59`,
+    woDetailTypeList: filters.detailType ? [filters.detailType] : [],
+    orgId: ALL_WORK_ORDER_ORG_ID,
+    receivingTeams: filters.receivingTeam
+      ? [filters.receivingTeam]
+      : [...ALL_WORK_ORDER_RECEIVING_TEAMS],
+  };
+
+  const response = await request<{
+    records?: CisWorkOrder[] | null;
+    total?: string | number | null;
+    pageSize?: string | number | null;
+    pageIndex?: string | number | null;
+    pages?: string | number | null;
+  } | CisWorkOrder[] | null>(paths.allWorkOrders, "POST", {
+    queryInfo,
+    page: {
+      pageSize,
+      pageIndex,
+      orders: [
+        { asc: sortDirection === "asc", column: "create_time" },
+        { asc: true, column: "address_detailed" },
+      ],
+    },
+  });
+  if (Array.isArray(response.data)) {
+    return {
+      records: response.data,
+      total: response.data.length,
+      pageSize,
+      pageIndex,
+      pages: response.data.length ? 1 : 0,
+    };
+  }
+  const data = response.data ?? {};
+  return {
+    records: data.records ?? [],
+    total: pageNumber(data.total, 0),
+    pageSize: pageNumber(data.pageSize, pageSize),
+    pageIndex: pageNumber(data.pageIndex, pageIndex),
+    pages: pageNumber(data.pages, 0),
+  };
+}
+
 export function fetchWorkOrderDetail(woHeaderId: string) {
   return request<WorkOrderDetail>(`${paths.detail}/${encodeURIComponent(woHeaderId)}`, "GET");
 }
 
 export function fetchWorkOrderNailInfo(woHeaderId: string) {
-  return request<WorkOrderDetail>(`${paths.nailInfo}/${encodeURIComponent(woHeaderId)}`, "POST");
+  return request<WorkOrderNailInfo>(`${paths.nailInfo}/${encodeURIComponent(woHeaderId)}`, "POST");
 }
 
 export function postWorkOrderForEdit(woHeaderId: string) {
@@ -120,8 +245,8 @@ export function saveWorkOrderEdit(payload: WorkOrderDetail) {
   return request<WorkOrderDetail>(paths.edit, "POST", payload);
 }
 
-export function saveWorkOrderAct(payload: Pick<WorkOrderDetail, "tcisWoHeaderDto" | "tcisWoLineDtoList">) {
-  return request<WorkOrderDetail>(paths.editAct, "POST", payload);
+export function saveWorkOrderAct(payload: WorkOrderActSavePayload) {
+  return request<string>(paths.editAct, "POST", payload);
 }
 
 export function fetchWorkOrderUserAjInfo(userInfoId: string, supplypointId: string) {
@@ -172,11 +297,20 @@ export function createWorkOrderExchangeLog(payload: {
   exchangeType: string; woHeaderId: string; woNumber: string; userName: string; params: { closeReason: string; remark: string };
 }) { return request<unknown>(paths.exchange, "POST", payload); }
 
-export async function fetchHistoricalWorkOrders(userinfoId: string, pageSize = 50, maxPages = 20) {
+export async function fetchHistoricalWorkOrders(
+  userinfoId: string,
+  pageSize = 50,
+  maxPages = 20,
+  dateRange?: { start: string; end: string },
+) {
   const result: Record<string, unknown>[] = [];
   for (let pageIndex = 1; pageIndex <= maxPages; pageIndex += 1) {
     const response = await request<Record<string, unknown>[] | { records?: Record<string, unknown>[] | null; list?: Record<string, unknown>[] | null; rows?: Record<string, unknown>[] | null } | null>(paths.history, "POST", {
-      queryInfo: { dateCreateStart: "", dateCreateEnd: "", userinfoId },
+      queryInfo: {
+        dateCreateStart: dateRange?.start ?? "",
+        dateCreateEnd: dateRange?.end ?? "",
+        userinfoId,
+      },
       page: { pageSize, pageIndex, orders: [{ asc: "true", column: "" }] },
     });
     const page = records(response.data); result.push(...page);

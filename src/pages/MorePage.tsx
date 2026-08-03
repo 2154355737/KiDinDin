@@ -7,9 +7,14 @@ export type MorePageProps = {
   busy?: boolean;
   message?: string;
   onOpenBatchSubmit: () => void;
+  onOpenAllWorkOrders: () => void;
+  onOpenVacantRoomFill: () => void;
+  onOpenVacantRoom: () => void;
   onOpenLogAudit: () => void;
   onOpenSaved: () => void;
   onOpenAppointments: () => void;
+  onOpenSettings: () => void;
+  showToolDescriptions?: boolean;
   onExportLocalData: () => void | Promise<void>;
   onImportLocalData: (json: string, fileName: string) => void | Promise<void>;
   onClearLocalData: () => void | Promise<void>;
@@ -20,9 +25,14 @@ export function MorePage({
   busy = false,
   message = "",
   onOpenBatchSubmit,
+  onOpenAllWorkOrders,
+  onOpenVacantRoomFill,
+  onOpenVacantRoom,
   onOpenLogAudit,
   onOpenSaved,
   onOpenAppointments,
+  onOpenSettings,
+  showToolDescriptions = true,
   onExportLocalData,
   onImportLocalData,
   onClearLocalData,
@@ -65,27 +75,45 @@ export function MorePage({
 
     <section className="more-page-section">
       <div className="more-section-heading"><h2>工单工具</h2></div>
-      <div className="more-feature-stack">
-        <button type="button" className="more-feature-card more-feature-primary" onClick={onOpenBatchSubmit}>
+      <div className={`more-tool-grid ${showToolDescriptions ? "" : "hide-descriptions"}`}>
+        <button type="button" className="more-feature-card" onClick={onOpenAllWorkOrders}>
+          <span className="more-feature-icon"><Icon name="search" size={21} /></span>
+          <span className="more-feature-copy"><b>全部工单</b><small>跨日期、状态和类型搜索筛选</small></span>
+          <Icon name="chevron" size={18} />
+        </button>
+        <button type="button" className="more-feature-card" onClick={onOpenVacantRoomFill}>
+          <span className="more-feature-icon"><Icon name="note" size={21} /></span>
+          <span className="more-feature-copy"><b>空房填单</b><small>检查后批量预存安检选项</small></span>
+          <Icon name="chevron" size={18} />
+        </button>
+        <button type="button" className="more-feature-card" onClick={onOpenVacantRoom}>
+          <span className="more-feature-icon"><Icon name="download" size={21} /></span>
+          <span className="more-feature-copy"><b>空房取单</b><small>批量提取上一次安检工单照片</small></span>
+          <Icon name="chevron" size={18} />
+        </button>
+        <button type="button" className="more-feature-card" onClick={onOpenBatchSubmit}>
           <span className="more-feature-icon"><Icon name="tasks" size={21} /></span>
-          <span className="more-feature-copy"><b>批量提交</b></span>
+          <span className="more-feature-copy"><b>批量提交</b><small>批量处理已准备工单</small></span>
           <Icon name="chevron" size={18} />
         </button>
         <button type="button" className="more-feature-card" onClick={onOpenLogAudit}>
           <span className="more-feature-icon"><Icon name="audit" size={20} /></span>
-          <span className="more-feature-copy"><b>流转审核</b></span>
+          <span className="more-feature-copy"><b>流转审核</b><small>检查关闭工单流转结果</small></span>
           <Icon name="chevron" size={17} />
         </button>
-      </div>
-      <div className="more-feature-grid">
         <button type="button" className="more-feature-card" onClick={onOpenSaved}>
           <span className="more-feature-icon"><Icon name="star" size={20} /></span>
-          <span className="more-feature-copy"><b>我的工单</b></span>
+          <span className="more-feature-copy"><b>我的工单</b><small>查看收藏、置顶与本地工单</small></span>
           <Icon name="chevron" size={17} />
         </button>
         <button type="button" className="more-feature-card" onClick={onOpenAppointments}>
           <span className="more-feature-icon"><Icon name="appointment" size={20} /></span>
-          <span className="more-feature-copy"><b>预约日程</b></span>
+          <span className="more-feature-copy"><b>预约日程</b><small>集中查看工单预约时间</small></span>
+          <Icon name="chevron" size={17} />
+        </button>
+        <button type="button" className="more-feature-card" onClick={onOpenSettings}>
+          <span className="more-feature-icon"><Icon name="settings" size={20} /></span>
+          <span className="more-feature-copy"><b>完整设置</b><small>外观、工具、存储与高级配置</small></span>
           <Icon name="chevron" size={17} />
         </button>
       </div>

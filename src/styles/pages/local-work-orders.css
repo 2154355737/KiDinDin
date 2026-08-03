@@ -438,11 +438,6 @@
   background: var(--dark-surface);
 }
 
-.theme-dark .more-feature-primary {
-  border-color: var(--dark-border-strong);
-  background: var(--dark-raised);
-}
-
 .theme-dark .more-feature-icon {
   background: var(--dark-active);
   color: var(--accent-on-dark);
