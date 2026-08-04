@@ -3,6 +3,7 @@ import { Icon } from "../components/Icon";
 import { SubHeader } from "../components/Navigation";
 import {
   clearVacantRoomImageCache,
+  defaultVacantRoomImageHashes,
   extractVacantRoomOrder,
   saveVacantRoomImages,
   vacantRoomImageDisplayName,
@@ -98,19 +99,22 @@ export function VacantRoomPage({
     return vacantOrders.filter((order) => selected.has(order.id));
   }, [selectedOrderIds, vacantOrders]);
 
+  const initialImageHashes = (extraction: VacantRoomExtraction) =>
+    autoSelectImages ? defaultVacantRoomImageHashes(extraction.images) : [];
+
   const extractedImages = useMemo(
     () =>
       vacantOrders.flatMap((order) => {
         const extraction = results[order.id]?.extraction;
         if (!extraction) return [];
         const selected = new Set(
-          selectedImageHashes[order.id] ?? extraction.images.map((image) => image.sha256),
+          selectedImageHashes[order.id] ?? initialImageHashes(extraction),
         );
         return extraction.images.flatMap((image, index) =>
           selected.has(image.sha256) ? [{ image, index, order }] : [],
         );
       }),
-    [results, selectedImageHashes, vacantOrders],
+    [autoSelectImages, results, selectedImageHashes, vacantOrders],
   );
 
   const updateResult = (id: string, patch: Partial<OrderExtractionState>) => {
@@ -157,9 +161,7 @@ export function VacantRoomPage({
           successCount += 1;
           setSelectedImageHashes((current) => ({
             ...current,
-            [order.id]: autoSelectImages
-              ? extraction.images.map((image) => image.sha256)
-              : [],
+            [order.id]: initialImageHashes(extraction),
           }));
           updateResult(order.id, {
             extraction,
@@ -206,9 +208,7 @@ export function VacantRoomPage({
       );
       setSelectedImageHashes((current) => ({
         ...current,
-        [order.id]: autoSelectImages
-          ? extraction.images.map((image) => image.sha256)
-          : [],
+        [order.id]: initialImageHashes(extraction),
       }));
       updateResult(order.id, {
         extraction,
@@ -254,7 +254,7 @@ export function VacantRoomPage({
         }
         return next;
       });
-      setMessage(`已保存 ${response.saved.length} 张图片到 Pictures/KiDinDin/空房取单/${date}`);
+      setMessage(`已保存 ${response.saved.length} 张图片到 Pictures/KiDinDin/空房取单/${date}，手机相册将按本次拍摄时间集中排序`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "保存到相册失败");
     } finally {
@@ -330,7 +330,8 @@ export function VacantRoomPage({
             const selected = selectedOrderIds.includes(order.id);
             const extraction = state?.extraction;
             const selectedHashes = new Set(
-              selectedImageHashes[order.id] ?? extraction?.images.map((image) => image.sha256) ?? [],
+              selectedImageHashes[order.id] ??
+                (extraction ? initialImageHashes(extraction) : []),
             );
             return (
               <article key={order.id} className={`vacant-room-card status-${state?.status ?? "idle"}`}>
@@ -377,7 +378,7 @@ export function VacantRoomPage({
                             onClick={() =>
                               setSelectedImageHashes((current) => {
                                 const hashes = new Set(
-                                  current[order.id] ?? extraction.images.map((item) => item.sha256),
+                                  current[order.id] ?? initialImageHashes(extraction),
                                 );
                                 if (hashes.has(image.sha256)) hashes.delete(image.sha256);
                                 else hashes.add(image.sha256);

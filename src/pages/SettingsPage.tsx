@@ -356,7 +356,7 @@ export function SettingsPage({
           <SettingsSwitch
             checked={appSettings.vacantRoom.autoSelectImages}
             label="提取后自动选择图片"
-            description="成功提取后默认选择去重后的全部图片，保存前仍可逐张取消。"
+            description="成功提取后默认只选择门牌、厨房、户内管、燃气表各一张，保存前仍可调整。"
             onChange={(checked) => updateVacantRoom({ autoSelectImages: checked })}
           />
           <SettingsSwitch

@@ -3,6 +3,7 @@ package com.ki.tauri_android_app
 import android.app.Activity
 import android.content.ContentUris
 import android.content.ContentValues
+import android.media.ExifInterface
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -15,6 +16,10 @@ import app.tauri.plugin.JSArray
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.UUID
 
 @InvokeArg
 class GalleryImageInput {
@@ -31,6 +36,8 @@ class SaveGalleryImagesArgs {
 
 @TauriPlugin
 class MediaStorePlugin(private val activity: Activity) : Plugin(activity) {
+  private data class ExistingImage(val uri: Uri, val displayName: String)
+
   @Command
   fun saveImages(invoke: Invoke) {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
@@ -51,33 +58,62 @@ class MediaStorePlugin(private val activity: Activity) : Plugin(activity) {
       val collection = MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
       val saved = JSArray()
       val relativeDirectory = "${Environment.DIRECTORY_PICTURES}/KiDinDin/空房取单/$safeRelativePath/"
+      val newestCapturedAt = System.currentTimeMillis()
 
-      for (item in args.images) {
+      for ((index, item) in args.images.withIndex()) {
         val source = File(item.path).canonicalFile
         val expectedPrefix = cacheRoot.path + File.separator
         if (!source.isFile || !source.path.startsWith(expectedPrefix)) {
           throw IllegalArgumentException("图片缓存路径无效")
         }
 
-        val displayName = sanitizeFileName(item.displayName, "历史安检照片.jpg")
-        val existingUri = findExistingImage(collection, displayName, relativeDirectory)
-        if (existingUri != null) {
-          saved.put(
-            JSObject()
-              .put("displayName", displayName)
-              .put("uri", existingUri.toString())
+        val legacyDisplayName = sanitizeFileName(item.displayName, "历史安检照片.jpg")
+        val fingerprint = "KiDinDin:${source.nameWithoutExtension}"
+        val capturedAt = newestCapturedAt - index * 1_000L
+        val existing = findExistingImage(
+          collection,
+          fingerprint,
+          legacyDisplayName,
+          relativeDirectory
+        )
+        if (existing != null) {
+          val existingDisplayName = if (existing.displayName.startsWith("MIe")) {
+            existing.displayName
+          } else {
+            randomDisplayName(item.mime)
+          }
+          val updateValues = galleryValues(
+            existingDisplayName,
+            item.mime,
+            relativeDirectory,
+            fingerprint,
+            capturedAt,
+            false
           )
-          continue
+          val updated = try {
+            resolver.update(existing.uri, updateValues, null, null)
+          } catch (_: SecurityException) {
+            0
+          }
+          if (updated > 0) {
+            writeCapturedAt(existing.uri, item.mime, capturedAt)
+            saved.put(
+              JSObject()
+                .put("displayName", existingDisplayName)
+                .put("uri", existing.uri.toString())
+            )
+            continue
+          }
         }
-        val values = ContentValues().apply {
-          put(MediaStore.Images.Media.DISPLAY_NAME, displayName)
-          put(MediaStore.Images.Media.MIME_TYPE, item.mime)
-          put(
-            MediaStore.Images.Media.RELATIVE_PATH,
-            relativeDirectory
-          )
-          put(MediaStore.Images.Media.IS_PENDING, 1)
-        }
+        val displayName = randomDisplayName(item.mime)
+        val values = galleryValues(
+          displayName,
+          item.mime,
+          relativeDirectory,
+          fingerprint,
+          capturedAt,
+          true
+        )
         val uri = resolver.insert(collection, values)
           ?: throw IllegalStateException("系统相册拒绝创建 $displayName")
 
@@ -86,8 +122,12 @@ class MediaStorePlugin(private val activity: Activity) : Plugin(activity) {
             if (output == null) throw IllegalStateException("无法写入 $displayName")
             source.inputStream().use { input -> input.copyTo(output) }
           }
+          writeCapturedAt(uri, item.mime, capturedAt)
           values.clear()
           values.put(MediaStore.Images.Media.IS_PENDING, 0)
+          values.put(MediaStore.Images.Media.DATE_TAKEN, capturedAt)
+          values.put(MediaStore.Images.Media.DATE_ADDED, capturedAt / 1_000L)
+          values.put(MediaStore.Images.Media.DATE_MODIFIED, capturedAt / 1_000L)
           resolver.update(uri, values, null, null)
           saved.put(
             JSObject()
@@ -106,21 +146,79 @@ class MediaStorePlugin(private val activity: Activity) : Plugin(activity) {
     }
   }
 
-  private fun findExistingImage(collection: Uri, displayName: String, relativePath: String): Uri? {
-    val projection = arrayOf(MediaStore.Images.Media._ID)
-    val selection = "${MediaStore.Images.Media.DISPLAY_NAME} = ? AND ${MediaStore.Images.Media.RELATIVE_PATH} = ?"
+  private fun galleryValues(
+    displayName: String,
+    mime: String,
+    relativePath: String,
+    fingerprint: String,
+    capturedAt: Long,
+    pending: Boolean
+  ) = ContentValues().apply {
+    put(MediaStore.Images.Media.DISPLAY_NAME, displayName)
+    put(MediaStore.Images.Media.MIME_TYPE, mime)
+    put(MediaStore.Images.Media.RELATIVE_PATH, relativePath)
+    put(MediaStore.Images.Media.DESCRIPTION, fingerprint)
+    put(MediaStore.Images.Media.DATE_TAKEN, capturedAt)
+    put(MediaStore.Images.Media.DATE_ADDED, capturedAt / 1_000L)
+    put(MediaStore.Images.Media.DATE_MODIFIED, capturedAt / 1_000L)
+    if (pending) put(MediaStore.Images.Media.IS_PENDING, 1)
+  }
+
+  private fun findExistingImage(
+    collection: Uri,
+    fingerprint: String,
+    legacyDisplayName: String,
+    relativePath: String
+  ): ExistingImage? {
+    val projection = arrayOf(
+      MediaStore.Images.Media._ID,
+      MediaStore.Images.Media.DISPLAY_NAME
+    )
+    val selection = "(${MediaStore.Images.Media.DESCRIPTION} = ? OR ${MediaStore.Images.Media.DISPLAY_NAME} = ?) AND ${MediaStore.Images.Media.RELATIVE_PATH} = ?"
     activity.contentResolver.query(
       collection,
       projection,
       selection,
-      arrayOf(displayName, relativePath),
+      arrayOf(fingerprint, legacyDisplayName, relativePath),
       null
     ).use { cursor ->
       if (cursor != null && cursor.moveToFirst()) {
-        return ContentUris.withAppendedId(collection, cursor.getLong(0))
+        return ExistingImage(
+          ContentUris.withAppendedId(collection, cursor.getLong(0)),
+          cursor.getString(1) ?: legacyDisplayName
+        )
       }
     }
     return null
+  }
+
+  private fun randomDisplayName(mime: String): String {
+    val extension = when (mime.lowercase()) {
+      "image/png" -> "png"
+      "image/webp" -> "webp"
+      else -> "jpg"
+    }
+    val randomPart = UUID.randomUUID().toString().replace("-", "").take(20)
+    return "MIe$randomPart.$extension"
+  }
+
+  private fun writeCapturedAt(uri: Uri, mime: String, capturedAt: Long) {
+    if (!mime.equals("image/jpeg", ignoreCase = true)) return
+    try {
+      activity.contentResolver.openFileDescriptor(uri, "rw").use { descriptor ->
+        if (descriptor == null) return
+        val timestamp = SimpleDateFormat("yyyy:MM:dd HH:mm:ss", Locale.US)
+          .format(Date(capturedAt))
+        ExifInterface(descriptor.fileDescriptor).apply {
+          setAttribute(ExifInterface.TAG_DATETIME, timestamp)
+          setAttribute(ExifInterface.TAG_DATETIME_ORIGINAL, timestamp)
+          setAttribute(ExifInterface.TAG_DATETIME_DIGITIZED, timestamp)
+          saveAttributes()
+        }
+      }
+    } catch (_: Exception) {
+      // DATE_TAKEN remains the fallback for providers that do not expose a seekable descriptor.
+    }
   }
 
   private fun sanitizePathPart(value: String, fallback: String): String {

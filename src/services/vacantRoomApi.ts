@@ -268,6 +268,28 @@ export function saveVacantRoomImages(
   });
 }
 
+const defaultPhotoMatchers = [
+  /门牌/,
+  /厨房/,
+  /户内管|表前管|尾管/,
+  /燃气表/,
+];
+
+export function defaultVacantRoomImageHashes(
+  images: VacantRoomExtractedImage[],
+) {
+  const selected = new Set<string>();
+  for (const matcher of defaultPhotoMatchers) {
+    const image = images.find(
+      (candidate) =>
+        !selected.has(candidate.sha256) &&
+        candidate.labels.some((label) => matcher.test(label)),
+    );
+    if (image) selected.add(image.sha256);
+  }
+  return [...selected];
+}
+
 export function vacantRoomImageDisplayName(
   order: WorkOrder,
   image: VacantRoomExtractedImage,
