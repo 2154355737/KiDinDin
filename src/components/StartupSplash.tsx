@@ -9,12 +9,14 @@ type StartupSplashProps = {
   accent: string;
   onComplete: () => void;
   ready: boolean;
+  status: string;
 };
 
 export function StartupSplash({
   accent,
   onComplete,
   ready,
+  status,
 }: StartupSplashProps) {
   const mountedAt = useRef(performance.now());
   const [leaving, setLeaving] = useState(false);
@@ -72,7 +74,7 @@ export function StartupSplash({
         <div className="startup-splash__progress" aria-hidden="true">
           <span />
         </div>
-        <p>{ready ? "准备就绪" : "正在安全恢复本机会话"}</p>
+        <p>{status}</p>
       </footer>
     </main>
   );

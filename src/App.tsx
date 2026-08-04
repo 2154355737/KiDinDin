@@ -55,8 +55,11 @@ import {
 } from "./services/workOrderApi";
 import {
   fetchIsMobileRuntime,
+  isWorkOrderAuthExpiredError,
   isNativeRuntime,
+  WORK_ORDER_AUTH_EXPIRED_EVENT,
   type AuthStatus,
+  type WorkOrderAuthExpiredDetail,
 } from "./services/tauri";
 import {
   APPEARANCE_STORAGE_KEY,
@@ -88,6 +91,8 @@ const AppDrawer = lazy(() =>
     default: module.AppDrawer,
   })),
 );
+
+const STARTUP_ORDERS_PRELOAD_TIMEOUT_MS = 8_000;
 const LocalWorkOrdersPage = lazy(() =>
   import("./pages/LocalWorkOrdersPage").then((module) => ({
     default: module.LocalWorkOrdersPage,
@@ -579,6 +584,8 @@ function isUnreachableExchangeLog(log: Record<string, unknown>) {
 export default function App() {
   const [auth, setAuth] = useState<AuthStatus | null>(null);
   const [startupSplashVisible, setStartupSplashVisible] = useState(true);
+  const [startupOrdersPreloadTimedOut, setStartupOrdersPreloadTimedOut] =
+    useState(false);
   const [authHistory, setAuthHistory] = useState<AuthHistoryItem[]>([]);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loggingIn, setLoggingIn] = useState(false);
@@ -634,6 +641,8 @@ export default function App() {
   const pendingLogRetriesRef = useRef<Record<string, PendingLogRetry>>({});
   const localSaveLocks = useRef(new Set<string>());
   const sessionRefreshPromise = useRef<Promise<AuthStatus> | null>(null);
+  const authExpiryHandlingRef = useRef(false);
+  const sessionEstablishedAtRef = useRef(0);
   const ordersRequestSequenceRef = useRef(0);
   const [historyFiles, setHistoryFiles] = useState<Record<string, File>>({});
   const [historyMode, setHistoryMode] = useState<"manual" | "auto">("manual");
@@ -750,6 +759,23 @@ export default function App() {
     appearanceSettings,
     new Date(appearanceClock),
   );
+  const startupSplashReady =
+    auth !== null &&
+    (!loggedIn || !loadingOrders || startupOrdersPreloadTimedOut);
+  const startupSplashStatus =
+    auth === null
+      ? "正在安全恢复本机会话"
+      : !loggedIn
+        ? loginError?.includes("过期")
+          ? "凭证已过期，正在返回登录页"
+          : "会话检查完成"
+        : startupOrdersPreloadTimedOut && loadingOrders
+          ? "工单加载超过 8 秒，进入首页继续加载"
+          : loadingOrders
+            ? "正在预加载今日工单"
+            : loadError
+              ? "今日工单预加载失败，可进入后重试"
+              : `今日工单已就绪 · ${orders.length} 条`;
   const operatorName = customOperatorName.trim() || "段鑫";
   const pendingLogRetryStorageKey = localAccountKey
     ? `${PENDING_LOG_RETRY_STORAGE_PREFIX}${localAccountKey}`
@@ -1104,6 +1130,51 @@ export default function App() {
     );
   }, [customOperatorName]);
   useEffect(() => {
+    const handleAuthExpired = (event: Event) => {
+      const detail = (event as CustomEvent<WorkOrderAuthExpiredDetail>).detail;
+      if (
+        detail?.requestStartedAt &&
+        detail.requestStartedAt < sessionEstablishedAtRef.current
+      )
+        return;
+      if (authExpiryHandlingRef.current) return;
+
+      authExpiryHandlingRef.current = true;
+      sessionEstablishedAtRef.current = 0;
+      ordersRequestSequenceRef.current += 1;
+      localStorage.setItem(
+        AUTO_LOGIN_HISTORY_STORAGE_KEY,
+        AUTO_LOGIN_DISABLED,
+      );
+      setAuth(unauthenticatedStatus());
+      setLoginError("用户凭证已过期，请重新粘贴最新登录凭据。");
+      setLocalAccountKey(null);
+      setOrders([]);
+      setSelected([]);
+      setBatchOrderIds([]);
+      setActiveOrderId("");
+      setLocalDetailOrder(null);
+      setLoadingOrders(false);
+      setStartupOrdersPreloadTimedOut(false);
+      setStartupRefreshNotice(null);
+      setDrawer(null);
+      setFilterOpen(false);
+      setOpenFilterPicker(null);
+      setRunning(false);
+      setPaused(false);
+      setScreen("orders");
+      setMainTab("home");
+      void logoutAuth().catch(() => undefined);
+    };
+
+    window.addEventListener(WORK_ORDER_AUTH_EXPIRED_EVENT, handleAuthExpired);
+    return () =>
+      window.removeEventListener(
+        WORK_ORDER_AUTH_EXPIRED_EVENT,
+        handleAuthExpired,
+      );
+  }, []);
+  useEffect(() => {
     let active = true;
     if (!isNativeRuntime()) {
       setAuth(unauthenticatedStatus());
@@ -1194,6 +1265,7 @@ export default function App() {
               );
           } catch (error) {
             autoRefreshError = error;
+            if (isWorkOrderAuthExpiredError(error)) throw error;
           } finally {
             if (sessionRefreshPromise.current === refreshRequest)
               sessionRefreshPromise.current = null;
@@ -1230,6 +1302,10 @@ export default function App() {
         } else {
           setLocalAccountKey(null);
         }
+        authExpiryHandlingRef.current = false;
+        sessionEstablishedAtRef.current = next.authenticated
+          ? Date.now()
+          : 0;
         setAuth(next);
         if (restoredHistory)
           void fetchAuthHistory()
@@ -1239,7 +1315,11 @@ export default function App() {
         if (!active) return;
         setLocalAccountKey(null);
         setAuth(unauthenticatedStatus());
-        setLoginError(`自动恢复登录失败：${messageOf(error)}`);
+        setLoginError(
+          isWorkOrderAuthExpiredError(error)
+            ? "用户凭证已过期，请重新粘贴最新登录凭据。"
+            : `自动恢复登录失败：${messageOf(error)}`,
+        );
       }
     };
 
@@ -1287,6 +1367,26 @@ export default function App() {
   useEffect(() => {
     void loadOrders();
   }, [loadOrders]);
+  useEffect(() => {
+    if (
+      !startupSplashVisible ||
+      !loggedIn ||
+      !loadingOrders ||
+      startupOrdersPreloadTimedOut
+    )
+      return;
+
+    const timeout = window.setTimeout(
+      () => setStartupOrdersPreloadTimedOut(true),
+      STARTUP_ORDERS_PRELOAD_TIMEOUT_MS,
+    );
+    return () => window.clearTimeout(timeout);
+  }, [
+    loadingOrders,
+    loggedIn,
+    startupOrdersPreloadTimedOut,
+    startupSplashVisible,
+  ]);
   useEffect(() => {
     const cached = historyPhotoCache[activeOrderId];
     setHistoryPhotos(cached?.photos ?? []);
@@ -1368,6 +1468,8 @@ export default function App() {
       setLocalDataMessage(
         accountKey ? "" : "当前登录缺少可识别的账号信息，本地工单功能已停用",
       );
+      authExpiryHandlingRef.current = false;
+      sessionEstablishedAtRef.current = Date.now();
       setAuth(status);
       if (history.length) {
         setAuthHistory(history);
@@ -1375,7 +1477,11 @@ export default function App() {
           localStorage.setItem(AUTO_LOGIN_HISTORY_STORAGE_KEY, historyId);
       }
     } catch (error) {
-      setLoginError(messageOf(error));
+      setLoginError(
+        isWorkOrderAuthExpiredError(error)
+          ? "用户凭证已过期，请重新粘贴最新登录凭据。"
+          : messageOf(error),
+      );
     } finally {
       setLoggingIn(false);
     }
@@ -1389,12 +1495,18 @@ export default function App() {
       setLoadingOrders(true);
       localStorage.setItem(AUTO_LOGIN_HISTORY_STORAGE_KEY, id);
       setLocalAccountKey(localAccountKeyFor(status, id));
+      authExpiryHandlingRef.current = false;
+      sessionEstablishedAtRef.current = Date.now();
       setAuth(status);
       void fetchAuthHistory()
         .then(setAuthHistory)
         .catch(() => undefined);
     } catch (error) {
-      setLoginError(messageOf(error));
+      setLoginError(
+        isWorkOrderAuthExpiredError(error)
+          ? "用户凭证已过期，请重新粘贴最新登录凭据。"
+          : messageOf(error),
+      );
     } finally {
       setLoggingIn(false);
     }
@@ -2206,6 +2318,8 @@ export default function App() {
       setLocalDataMessage("当前登录缺少可识别的账号信息，本地工单功能已停用");
     }
     setLocalAccountKey(nextAccountKey);
+    authExpiryHandlingRef.current = false;
+    sessionEstablishedAtRef.current = status.authenticated ? Date.now() : 0;
     setAuth(status);
   };
 
@@ -2265,6 +2379,8 @@ export default function App() {
 
   const logout = async () => {
     ordersRequestSequenceRef.current += 1;
+    authExpiryHandlingRef.current = false;
+    sessionEstablishedAtRef.current = 0;
     localStorage.setItem(AUTO_LOGIN_HISTORY_STORAGE_KEY, AUTO_LOGIN_DISABLED);
     const status = await logoutAuth();
     setLocalAccountKey(null);
@@ -2383,7 +2499,8 @@ export default function App() {
     return (
       <StartupSplash
         accent={appliedAccent}
-        ready={auth !== null}
+        ready={startupSplashReady}
+        status={startupSplashStatus}
         onComplete={finishStartupSplash}
       />
     );

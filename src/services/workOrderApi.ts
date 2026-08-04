@@ -1,4 +1,9 @@
-import { fileToNativeUpload, nativeInvoke, nativeRequest } from "./tauri";
+import {
+  fileToNativeUpload,
+  nativeInvoke,
+  nativeRequest,
+  reportWorkOrderAuthExpired,
+} from "./tauri";
 
 export type ApiEnvelope<T> = { code: number; msg: string | null; data: T };
 
@@ -149,11 +154,20 @@ export const ALL_WORK_ORDER_RECEIVING_TEAMS = [
 ] as const;
 
 async function request<T>(path: string, method: string, body?: unknown): Promise<ApiEnvelope<T>> {
+  const requestStartedAt = Date.now();
   const payload = await nativeRequest(path, method, body) as ApiEnvelope<T>;
   if (!payload || typeof payload !== "object" || typeof payload.code !== "number") {
     throw new Error("接口返回格式无效");
   }
-  if (payload.code !== 0) throw new Error(payload.msg || `接口业务返回 ${payload.code}`);
+  if (payload.code !== 0) {
+    const error = new Error(payload.msg || `接口业务返回 ${payload.code}`);
+    reportWorkOrderAuthExpired(error, {
+      command: "cis_request",
+      path,
+      requestStartedAt,
+    });
+    throw error;
+  }
   return payload;
 }
 
@@ -255,11 +269,20 @@ export function fetchWorkOrderUserAjInfo(userInfoId: string, supplypointId: stri
 }
 
 export async function uploadWorkOrderFiles(files: File[], bizId = "") {
+  const requestStartedAt = Date.now();
   const payload = await nativeInvoke<ApiEnvelope<{ bizId: string; sysAttachList?: UploadedFile[] | null }>>(
     "cis_upload_files",
     { bizId: bizId || null, files: await Promise.all(files.map(fileToNativeUpload)) }
   );
-  if (payload.code !== 0) throw new Error(payload.msg || `上传业务返回 ${payload.code}`);
+  if (payload.code !== 0) {
+    const error = new Error(payload.msg || `上传业务返回 ${payload.code}`);
+    reportWorkOrderAuthExpired(error, {
+      command: "cis_upload_files",
+      path: "/api/appsys/file/upload",
+      requestStartedAt,
+    });
+    throw error;
+  }
   if (!payload.data?.bizId) throw new Error("上传响应缺少 data.bizId");
   return payload;
 }

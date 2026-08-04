@@ -25,6 +25,43 @@ type TauriInternals = {
   invoke: <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
 };
 
+export const WORK_ORDER_AUTH_EXPIRED_EVENT =
+  "kidindin:work-order-auth-expired";
+
+export type WorkOrderAuthExpiredDetail = {
+  command: string;
+  message: string;
+  path: string | null;
+  requestStartedAt: number;
+};
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+export function isWorkOrderAuthExpiredError(error: unknown) {
+  const message = errorMessage(error);
+  return (
+    message.includes("用户凭证已过期") ||
+    message.includes("登录已失效") ||
+    (/(?:^|\D)401(?:\D|$)/.test(message) &&
+      /unauthorized|凭证|认证|登录/i.test(message))
+  );
+}
+
+export function reportWorkOrderAuthExpired(
+  error: unknown,
+  detail: Omit<WorkOrderAuthExpiredDetail, "message">,
+) {
+  if (!isWorkOrderAuthExpiredError(error)) return;
+  window.dispatchEvent(
+    new CustomEvent<WorkOrderAuthExpiredDetail>(
+      WORK_ORDER_AUTH_EXPIRED_EVENT,
+      { detail: { ...detail, message: errorMessage(error) } },
+    ),
+  );
+}
+
 function getTauriInternals() {
   const internals = (globalThis as typeof globalThis & { __TAURI_INTERNALS__?: TauriInternals })
     .__TAURI_INTERNALS__;
@@ -40,7 +77,17 @@ export function isNativeRuntime() {
 }
 
 export function nativeInvoke<T>(command: string, args?: Record<string, unknown>) {
-  return getTauriInternals().invoke<T>(command, args);
+  const requestStartedAt = Date.now();
+  return getTauriInternals()
+    .invoke<T>(command, args)
+    .catch((error) => {
+      reportWorkOrderAuthExpired(error, {
+        command,
+        path: typeof args?.path === "string" ? args.path : null,
+        requestStartedAt,
+      });
+      throw error;
+    });
 }
 
 export async function fileToNativeUpload(file: File): Promise<NativeUploadFile> {
