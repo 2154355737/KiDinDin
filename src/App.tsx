@@ -123,6 +123,11 @@ const VacantRoomFillPage = lazy(() =>
     default: module.VacantRoomFillPage,
   })),
 );
+const VisitVerifyPage = lazy(() =>
+  import("./pages/VisitVerifyPage").then((module) => ({
+    default: module.VisitVerifyPage,
+  })),
+);
 const SettingsPage = lazy(() =>
   import("./pages/SettingsPage").then((module) => ({
     default: module.SettingsPage,
@@ -1695,6 +1700,18 @@ export default function App() {
       "工单已关闭，但未查询到“到访不遇”流转日志，已加入待补发队列",
     );
   };
+  const ensureUnreachableExchangeLog = async (order: WorkOrder) => {
+    if (await hasUnreachableExchangeLog(order)) return false;
+    await createWorkOrderExchangeLog({
+      exchangeType: EXCHANGE_TYPE_UNREACHABLE,
+      params: { closeReason: reason, remark },
+      userName: operatorName.trim() || "段鑫",
+      woHeaderId: order.woHeaderId,
+      woNumber: order.woNumber,
+    });
+    await waitForUnreachableExchangeLog(order);
+    return true;
+  };
   const toggleOrder = (id: string) =>
     setSelected((current) =>
       current.includes(id)
@@ -1928,10 +1945,63 @@ export default function App() {
     setPaused(false);
     setCurrentIndex(0);
     setScreen("running");
+    let submittedCount = 0;
     for (let index = 0; index < selectedOrders.length; index += 1) {
       const order = selectedOrders[index];
       const historyFile = historyFiles[order.id];
-      if (index > 0 && submitIntervalMaxSeconds > 0) {
+      setCurrentIndex(index + 1);
+
+      let closedBeforeSubmit: boolean;
+      let hasLogBeforeSubmit: boolean;
+      try {
+        setRunMessage(`正在提交前核验 ${order.woNumber} 的状态与流转日志…`);
+        [closedBeforeSubmit, hasLogBeforeSubmit] = await Promise.all([
+          isWorkOrderClosedOnServer(order),
+          hasUnreachableExchangeLog(order),
+        ]);
+      } catch (error) {
+        setOrderStatus(order.id, "关闭失败");
+        setRunMessage(
+          `${order.woNumber} 提交前核验失败，已停止该单：${messageOf(error)}`,
+        );
+        continue;
+      }
+
+      if (closedBeforeSubmit && hasLogBeforeSubmit) {
+        setOrderStatus(order.id, "已结束", "60");
+        resolvePendingLogRetry(order);
+        setSelected((current) => current.filter((id) => id !== order.id));
+        setRunMessage(`${order.woNumber} 已关闭且已有到访不遇日志，已跳过重复提交`);
+        continue;
+      }
+
+      if (!closedBeforeSubmit && hasLogBeforeSubmit) {
+        setOrderStatus(order.id, "关闭失败");
+        setRunMessage(
+          `${order.woNumber} 尚未关闭但已有到访不遇日志，状态矛盾，已停止该单`,
+        );
+        continue;
+      }
+
+      if (closedBeforeSubmit) {
+        queuePendingLogRetry(order);
+        setOrderStatus(order.id, "日志失败", "60");
+        try {
+          setRunMessage(`${order.woNumber} 已关闭，正在补写缺失的到访不遇日志…`);
+          await ensureUnreachableExchangeLog(order);
+          setOrderStatus(order.id, "已结束", "60");
+          resolvePendingLogRetry(order);
+          setSelected((current) => current.filter((id) => id !== order.id));
+          setRunMessage(`${order.woNumber} 缺失日志已补写并核验`);
+        } catch (error) {
+          setRunMessage(
+            `${order.woNumber} 已关闭，流转日志补写失败：${messageOf(error)}`,
+          );
+        }
+        continue;
+      }
+
+      if (submittedCount > 0 && submitIntervalMaxSeconds > 0) {
         const minSeconds = Math.min(
           submitIntervalMinSeconds,
           submitIntervalMaxSeconds,
@@ -1946,7 +2016,7 @@ export default function App() {
         setRunMessage(`随机等待 ${delaySeconds} 秒后提交下一单…`);
         await wait(delaySeconds * 1000);
       }
-      setCurrentIndex(index + 1);
+      submittedCount += 1;
       try {
         setRunMessage(`正在上传 ${order.woNumber} 的两张照片…`);
         const uploaded = await uploadWorkOrderFiles([historyFile, libraryFile]);
@@ -1981,19 +2051,16 @@ export default function App() {
         }
       }
       try {
-        setRunMessage(`正在写入 ${order.woNumber} 的流转日志…`);
-        await createWorkOrderExchangeLog({
-          exchangeType: EXCHANGE_TYPE_UNREACHABLE,
-          params: { closeReason: reason, remark },
-          userName: operatorName.trim() || "段鑫",
-          woHeaderId: order.woHeaderId,
-          woNumber: order.woNumber,
-        });
-        setRunMessage(`正在核验 ${order.woNumber} 的流转日志…`);
-        await waitForUnreachableExchangeLog(order);
+        setRunMessage(`正在检查并写入 ${order.woNumber} 的流转日志…`);
+        const created = await ensureUnreachableExchangeLog(order);
         setOrderStatus(order.id, "已结束", "60");
         resolvePendingLogRetry(order);
         setSelected((current) => current.filter((id) => id !== order.id));
+        setRunMessage(
+          created
+            ? `${order.woNumber} 到访不遇日志已写入并核验`
+            : `${order.woNumber} 已存在到访不遇日志，未重复写入`,
+        );
       } catch (error) {
         setOrderStatus(order.id, "日志失败");
         setRunMessage(
@@ -2453,6 +2520,7 @@ export default function App() {
       case "log-audit":
       case "vacant-room":
       case "vacant-room-fill":
+      case "visit-verify":
       case "all-work-orders":
         setScreen("orders");
         setMainTab("more");
@@ -2693,6 +2761,7 @@ export default function App() {
               settingsReturnTabRef.current = "more";
               setScreen("settings");
             }}
+            onOpenVisitVerify={() => setScreen("visit-verify")}
             showToolDescriptions={appSettings.display.showToolDescriptions}
             onExportLocalData={exportLocalData}
             onImportLocalData={importLocalData}
@@ -2728,6 +2797,14 @@ export default function App() {
             orders={orders}
             date={selectedDate}
             onDateChange={changeSelectedDate}
+            onBack={() => {
+              setScreen("orders");
+              setMainTab("more");
+            }}
+            />
+          )}
+          {screen === "visit-verify" && (
+            <VisitVerifyPage
             onBack={() => {
               setScreen("orders");
               setMainTab("more");

@@ -1,5 +1,5 @@
 use base64::{engine::general_purpose::STANDARD, Engine as _};
-use image::{codecs::jpeg::JpegEncoder, ImageReader};
+use image::{codecs::jpeg::JpegEncoder, DynamicImage, ImageReader};
 use reqwest::{header, redirect, Client, Url};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -351,4 +351,72 @@ pub fn save_vacant_room_images(
         }
         Ok(SaveImagesResult { saved })
     }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VerifyAugmentInput {
+    base64: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AugmentResultItem {
+    cache_key: String,
+    preview_data_url: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VerifyAugmentResult {
+    augmented: AugmentResultItem,
+}
+
+#[tauri::command]
+pub async fn verify_augment_image(
+    app: AppHandle,
+    input: VerifyAugmentInput,
+) -> Result<VerifyAugmentResult, String> {
+    tauri::async_runtime::spawn_blocking(move || verify_augment_image_blocking(&app, input))
+        .await
+        .map_err(|error| format!("图片验证任务异常终止：{error}"))?
+}
+
+fn verify_augment_image_blocking(
+    app: &AppHandle,
+    input: VerifyAugmentInput,
+) -> Result<VerifyAugmentResult, String> {
+    let raw = input.base64.rsplit(',').next().unwrap_or(&input.base64);
+    let bytes = STANDARD
+        .decode(raw)
+        .map_err(|_| "图片 Base64 编码无效".to_string())?;
+    if bytes.len() > MAX_IMAGE_BYTES {
+        return Err(format!("图片不能超过 {} MB", MAX_IMAGE_BYTES / 1024 / 1024));
+    }
+    let format = image::guess_format(&bytes).map_err(|_| "无法识别图片格式".to_string())?;
+
+    let original_image = ImageReader::with_format(Cursor::new(bytes.as_slice()), format)
+        .decode()
+        .map_err(|_| "图片内容损坏，无法解码".to_string())?;
+    let prepared_image = crate::img_augment::prepare_image_for_augmentation(original_image);
+    let directory = cache_directory(app)?;
+    clear_stale_files(&directory);
+    let augmented = build_augment_result(&prepared_image, &directory)?;
+
+    Ok(VerifyAugmentResult { augmented })
+}
+
+fn build_augment_result(
+    image: &DynamicImage,
+    directory: &Path,
+) -> Result<AugmentResultItem, String> {
+    let (bytes, preview) = crate::img_augment::augment_prepared_image_with_preview(image)?;
+    let sha256 = format!("{:x}", Sha256::digest(&bytes));
+    let cache_key = format!("verify-{sha256}.jpg");
+    fs::write(directory.join(&cache_key), &bytes)
+        .map_err(|error| format!("缓存增广图片失败：{error}"))?;
+    Ok(AugmentResultItem {
+        cache_key,
+        preview_data_url: format!("data:image/jpeg;base64,{}", STANDARD.encode(preview)),
+    })
 }

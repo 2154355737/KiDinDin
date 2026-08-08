@@ -1,0 +1,105 @@
+/* 到访验证 */
+.visit-verify-page {
+  padding: 16px 20px 32px;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.visit-verify-description {
+  margin: 0 0 14px;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.visit-verify-upload {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.visit-verify-file {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.visit-verify-file span {
+  font-weight: 600;
+  font-size: 14px;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.visit-verify-file small {
+  color: var(--color-text-secondary);
+}
+
+.visit-verify-error {
+  color: var(--color-danger, #e53e3e);
+  font-size: 14px;
+  margin-bottom: 12px;
+}
+
+.visit-verify-results {
+  display: flex;
+  flex-direction: column;
+}
+
+.visit-verify-section {
+  margin-bottom: 20px;
+}
+
+.visit-verify-section h3 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  margin: 0 0 12px;
+}
+
+.visit-verify-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.visit-verify-preview {
+  width: 100%;
+  max-height: 440px;
+  border-radius: 6px;
+  object-fit: contain;
+  background: var(--color-background);
+}
+
+.visit-verify-result-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.visit-verify-result-actions button {
+  justify-content: center;
+}
+
+.visit-verify-save-message {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 12px 0 0;
+  color: var(--color-success, #38a169);
+  font-size: 13px;
+}
+
+.theme-dark .visit-verify-card {
+  background: var(--color-surface-dark, #1a1a2e);
+  border-color: var(--color-border-dark, #2d2d44);
+}

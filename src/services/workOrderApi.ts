@@ -297,11 +297,10 @@ export async function fetchWorkOrderFiles(bizId: string) {
 export async function downloadWorkOrderFile(file: UploadedFile) {
   const path = String(file.downloadFilePath ?? "").trim();
   if (!path) throw new Error("历史附件缺少下载地址");
-  const name = String(file.fileName ?? "历史到访照片.jpg");
-  const downloaded = await nativeInvoke<DownloadedFile>("cis_download_file", { fileName: name, path });
+  const downloaded = await nativeInvoke<DownloadedFile>("cis_download_file", { path });
   const binary = atob(downloaded.base64);
   const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
-  return new File([bytes], downloaded.name || name, { type: downloaded.mime || "image/jpeg" });
+  return new File([bytes], downloaded.name, { type: downloaded.mime || "image/jpeg" });
 }
 
 export function updateLastHouseholdTime(payload: {

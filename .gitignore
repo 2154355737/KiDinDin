@@ -49,3 +49,4 @@ Thumbs.db
 # Test
 coverage
 src-tauri/gen/android/app/src/main/res/mipmap-xxhdpi/ic_launcher_foreground.png
+.reasonix/

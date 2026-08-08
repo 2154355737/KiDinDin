@@ -6,6 +6,7 @@ use std::{fs, path::PathBuf, sync::Mutex, time::{SystemTime, UNIX_EPOCH}};
 use tauri::{AppHandle, Manager, State};
 use uuid::Uuid;
 mod vacant_room;
+mod img_augment;
 #[cfg(mobile)]
 use tauri_plugin_biometric::{AuthOptions, BiometricExt};
 
@@ -118,6 +119,11 @@ struct DownloadedFile {
     base64: String,
     mime: String,
     name: String,
+}
+
+fn random_jpeg_file_name() -> String {
+    let random_part = Uuid::new_v4().simple().to_string();
+    format!("MIe{}.jpg", &random_part[..20])
 }
 
 #[derive(Serialize)]
@@ -504,12 +510,21 @@ fn is_mobile_runtime() -> bool {
 #[tauri::command]
 async fn cis_download_file(
     path: String,
-    file_name: String,
     image_state: State<'_, vacant_room::VacantRoomImageState>,
 ) -> Result<DownloadedFile, String> {
     if path.trim().is_empty() { return Err("图片下载地址为空".into()); }
-    let (bytes, _, mime) = image_state.download_image(&path).await?;
-    Ok(DownloadedFile { base64: STANDARD.encode(bytes), mime: mime.into(), name: file_name })
+    let (bytes, format, _mime) = image_state.download_image(&path).await?;
+    // 自动历史照片在上传前统一走增广；CPU 密集处理不占用异步请求线程。
+    let augmented = tauri::async_runtime::spawn_blocking(move || {
+        crate::img_augment::augment_image(&bytes, format)
+    })
+    .await
+    .map_err(|error| format!("图片增广任务异常终止：{error}"))??;
+    Ok(DownloadedFile {
+        base64: STANDARD.encode(&augmented),
+        mime: "image/jpeg".into(),
+        name: random_jpeg_file_name(),
+    })
 }
 
 #[tauri::command]
@@ -577,9 +592,28 @@ pub fn run() {
             vacant_room::cis_cache_vacant_room_image,
             vacant_room::clear_vacant_room_image_cache,
             vacant_room::save_vacant_room_images,
+            vacant_room::verify_augment_image,
             cis_request,
             cis_upload_files
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::random_jpeg_file_name;
+
+    #[test]
+    fn jpeg_file_name_is_random_and_matches_reencoded_content() {
+        let first = random_jpeg_file_name();
+        let second = random_jpeg_file_name();
+        assert_ne!(first, second);
+        for name in [first, second] {
+            assert_eq!(name.len(), 27);
+            assert!(name.starts_with("MIe"));
+            assert!(name.ends_with(".jpg"));
+            assert!(name[3..23].chars().all(|character| character.is_ascii_hexdigit()));
+        }
+    }
 }
