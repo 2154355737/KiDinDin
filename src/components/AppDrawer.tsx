@@ -33,6 +33,12 @@ import {
 import { Icon } from "./Icon";
 import { PhotoTile } from "./PhotoTile";
 import { StatusBadge } from "./WorkOrderList";
+import {
+  inspectResidentSecurityPrefill,
+  isResidentSecurityPrefillTarget,
+  saveResidentSecurityPrefill,
+  type ResidentSecurityPrefillPreview,
+} from "../services/residentSecurityPrefillApi";
 
 function asObject(value: unknown): Record<string, unknown> {
   return value && typeof value === "object"
@@ -244,6 +250,13 @@ export function AppDrawer({
   const [exchangeLogs, setExchangeLogs] = useState<ExchangeLog[] | null>(null);
   const [exchangeLogsLoading, setExchangeLogsLoading] = useState(false);
   const [exchangeLogsError, setExchangeLogsError] = useState("");
+  const [quickPrefillStatus, setQuickPrefillStatus] = useState<
+    "idle" | "running" | "success" | "error"
+  >("idle");
+  const [quickPrefillConfirmOpen, setQuickPrefillConfirmOpen] = useState(false);
+  const [quickPrefillMessage, setQuickPrefillMessage] = useState("");
+  const [quickPrefillPreview, setQuickPrefillPreview] =
+    useState<ResidentSecurityPrefillPreview | null>(null);
   const [refreshingSession, setRefreshingSession] = useState(false);
   const [refreshMessage, setRefreshMessage] = useState("");
   const [refreshTokenInput, setRefreshTokenInput] = useState("");
@@ -263,11 +276,50 @@ export function AppDrawer({
         order.status === "日志失败" ||
         order.status === "已结束"),
   );
+  const canOpenResidentSecurityPrefill = Boolean(
+    order && isResidentSecurityPrefillTarget(order),
+  );
   useEffect(() => {
     setExchangeLogs(null);
     setExchangeLogsLoading(false);
     setExchangeLogsError("");
+    setQuickPrefillStatus("idle");
+    setQuickPrefillConfirmOpen(false);
+    setQuickPrefillMessage("");
+    setQuickPrefillPreview(null);
   }, [order?.woHeaderId]);
+
+  const runResidentSecurityPrefill = async () => {
+    if (!order || !canOpenResidentSecurityPrefill || quickPrefillStatus === "running")
+      return;
+    setQuickPrefillConfirmOpen(false);
+    setQuickPrefillStatus("running");
+    setQuickPrefillMessage("正在核对上一年工单并预存选择结果…");
+    setQuickPrefillPreview(null);
+    try {
+      const inspected = await inspectResidentSecurityPrefill(order);
+      const preview = await saveResidentSecurityPrefill(
+        order,
+        inspected.historyWoHeaderId,
+      );
+      setQuickPrefillPreview(preview);
+      setQuickPrefillStatus("success");
+      const hazardResult =
+        preview.hazardSource === "current" && preview.hazardStatus !== "unknown"
+          ? `当前识别 ${preview.hazards.length} 项隐患`
+          : preview.hazardMessage;
+      setQuickPrefillMessage(
+        preview.prefillCount > 0
+          ? `已预填 ${preview.prefillCount} 项，${hazardResult}`
+          : `无需重复预填，${hazardResult}`,
+      );
+    } catch (error) {
+      setQuickPrefillStatus("error");
+      setQuickPrefillMessage(
+        error instanceof Error ? error.message : "安检预填失败",
+      );
+    }
+  };
 
   const confirmRetryLog = async () => {
     if (!order) return;
@@ -468,6 +520,65 @@ export function AppDrawer({
                     order.address,
                 )}
               </b>
+            </section>
+            <section className="detail-quick-actions">
+              <h3>快捷操作</h3>
+              <button
+                type="button"
+                disabled={
+                  !canOpenResidentSecurityPrefill ||
+                  quickPrefillStatus === "running"
+                }
+                onClick={() => setQuickPrefillConfirmOpen(true)}
+              >
+                <span className="detail-quick-action-icon">
+                  <Icon name="audit" size={18} />
+                </span>
+                <span>
+                  <b>安检预填</b>
+                  <small>
+                    {quickPrefillStatus === "running"
+                      ? "正在执行，请保持当前工单详情打开"
+                      : canOpenResidentSecurityPrefill
+                        ? "点击后立即读取上一年选项并预存当前工单"
+                      : "仅支持待处理的居民安检单"}
+                  </small>
+                </span>
+                <Icon
+                  name={quickPrefillStatus === "running" ? "refresh" : "chevron"}
+                  size={16}
+                />
+              </button>
+              {quickPrefillMessage ? (
+                <p className={`detail-quick-action-message status-${quickPrefillStatus}`}>
+                  {quickPrefillMessage}
+                </p>
+              ) : null}
+              {quickPrefillPreview ? (
+                <div className="detail-quick-prefill-result">
+                  <div>
+                    <span><b>{quickPrefillPreview.prefillCount}</b> 项预填</span>
+                    <span><b>{quickPrefillPreview.hazards.length}</b> 项当前隐患</span>
+                    <span><b>{quickPrefillPreview.excludedFieldCount}</b> 项排除</span>
+                  </div>
+                  {quickPrefillPreview.hazards.length ? (
+                    <ol>
+                      {quickPrefillPreview.hazards.map((hazard) => (
+                        <li key={`${hazard.order}-${hazard.actCode}`}>
+                          <b>{hazard.hint}</b>
+                          <span>
+                            {[hazard.checkResultName, hazard.checkLevel]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </span>
+                        </li>
+                      ))}
+                    </ol>
+                  ) : (
+                    <p>{quickPrefillPreview.hazardMessage}</p>
+                  )}
+                </div>
+              ) : null}
             </section>
             {detailError ? <p className="detail-error">{detailError}</p> : null}
             <DetailSection title="工单信息">
@@ -988,6 +1099,45 @@ export function AppDrawer({
                     onClick={() => void confirmRetryLog()}
                   >
                     {retryingLog ? "正在创建…" : "确认创建"}
+                  </button>
+                </div>
+              </section>
+            </div>,
+            document.body,
+          )}
+        {quickPrefillConfirmOpen && order &&
+          createPortal(
+            <div
+              className="retry-confirm-backdrop"
+              onClick={(event) => {
+                event.stopPropagation();
+                setQuickPrefillConfirmOpen(false);
+              }}
+            >
+              <section
+                className="retry-confirm-dialog"
+                role="dialog"
+                aria-modal="true"
+                aria-label="确认安检预填"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <h3>确认预填当前工单？</h3>
+                <p>
+                  将读取该住户上一年度已完成的居民安检单，并通过 editAct
+                  预存选择结果到当前工单“{order.woNumber || order.woHeaderId}”。图片、文本和日期不会复制。
+                </p>
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setQuickPrefillConfirmOpen(false)}
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void runResidentSecurityPrefill()}
+                  >
+                    确认预填
                   </button>
                 </div>
               </section>

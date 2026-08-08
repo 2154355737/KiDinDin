@@ -123,6 +123,11 @@ const VacantRoomFillPage = lazy(() =>
     default: module.VacantRoomFillPage,
   })),
 );
+const ResidentSecurityPrefillPage = lazy(() =>
+  import("./pages/ResidentSecurityPrefillPage").then((module) => ({
+    default: module.ResidentSecurityPrefillPage,
+  })),
+);
 const VisitVerifyPage = lazy(() =>
   import("./pages/VisitVerifyPage").then((module) => ({
     default: module.VisitVerifyPage,
@@ -2520,6 +2525,7 @@ export default function App() {
       case "log-audit":
       case "vacant-room":
       case "vacant-room-fill":
+      case "resident-security-prefill":
       case "visit-verify":
       case "all-work-orders":
         setScreen("orders");
@@ -2748,6 +2754,7 @@ export default function App() {
               setLocalDetailOrder(null);
               setScreen("mode");
             }}
+            onOpenResidentSecurityPrefill={() => setScreen("resident-security-prefill")}
             onOpenVacantRoom={() => setScreen("vacant-room")}
             onOpenVacantRoomFill={() => setScreen("vacant-room-fill")}
             onOpenLogAudit={() => {
@@ -2801,6 +2808,17 @@ export default function App() {
               setScreen("orders");
               setMainTab("more");
             }}
+            />
+          )}
+          {screen === "resident-security-prefill" && (
+            <ResidentSecurityPrefillPage
+              orders={orders}
+              date={selectedDate}
+              onDateChange={changeSelectedDate}
+              onBack={() => {
+                setScreen("orders");
+                setMainTab("more");
+              }}
             />
           )}
           {screen === "visit-verify" && (

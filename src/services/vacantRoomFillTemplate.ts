@@ -4,6 +4,16 @@ export type VacantRoomFillTemplateLine = {
   attrDetail: Record<string, unknown> | null;
 };
 
+// The captured editAct contract omits woHeaderId on these six structural rows.
+export const WORK_ORDER_ACT_LINES_WITHOUT_HEADER_ID = [
+  "SFYCNL0001",
+  "SFYRSQ0001",
+  "SFYZJ00001",
+  "TS00000003",
+  "TS00000004",
+  "TS00000005",
+] as const;
+
 // Captured from the validated residential inspection form. Household-specific
 // meter, safety-card and recording values are intentionally excluded here.
 export const VACANT_ROOM_ACT_SET_ID = "1293236546083926018";

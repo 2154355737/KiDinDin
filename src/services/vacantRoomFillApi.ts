@@ -6,6 +6,7 @@ import {
 import {
   VACANT_ROOM_ACT_SET_ID,
   VACANT_ROOM_FILL_TEMPLATE,
+  WORK_ORDER_ACT_LINES_WITHOUT_HEADER_ID,
   type VacantRoomFillTemplateLine,
 } from "./vacantRoomFillTemplate";
 import type { WorkOrder } from "../types/workOrder";
@@ -16,14 +17,9 @@ const PROTECTED_DYNAMIC_CODES = new Set([
   "isRecording",
 ]);
 
-const LINES_WITHOUT_HEADER_ID = new Set([
-  "SFYCNL0001",
-  "SFYRSQ0001",
-  "SFYZJ00001",
-  "TS00000003",
-  "TS00000004",
-  "TS00000005",
-]);
+const LINES_WITHOUT_HEADER_ID = new Set<string>(
+  WORK_ORDER_ACT_LINES_WITHOUT_HEADER_ID,
+);
 
 type WorkOrderLine = VacantRoomFillTemplateLine & {
   woHeaderId?: string;

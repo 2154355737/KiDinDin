@@ -12,7 +12,7 @@
 
 | 接口 | 方法与请求 | `data` 响应结构 |
 | --- | --- | --- |
-| `/api/workorder/tcisworkorderAj/queryAjWorkOrderList` | POST `{ expectingDate: "YYYY-MM-DD 00:00:00" }` | `WorkOrderItem[]`；关键字段：`woHeaderId`、`woNumber`、`statusCode`、`userinfoId`、`supplypointId`、`userName`、`addressDetailed`、`addressDetail` |
+| `/api/workorder/tcisworkorderAj/queryAjWorkOrderList` | POST `{ createTime: "YYYY-MM-DD 00:00:00" }`；仅当旧服务明确返回参数校验错误时回退 `{ expectingDate: "YYYY-MM-DD 00:00:00" }` | `WorkOrderItem[]`；关键字段：`woHeaderId`、`woNumber`、`statusCode`、`userinfoId`、`supplypointId`、`userName`、`addressDetailed`、`addressDetail` |
 | `/api/workorder/tcisworkorder/woInfoWithAttrAndParties/{id}` | GET | `WorkOrderDetailData`：`tcisWoHeaderDto`、属性/人员/行项目/物料数组 |
 | `/api/workorder/tcisworkorder/queryWoInfoForNail/{id}` | POST | 同 `WorkOrderDetailData`，用于安检表单 |
 | `/api/workorder/tcisworkorder/{id}` | POST | 同 `WorkOrderDetailData`，编辑页完整详情 |

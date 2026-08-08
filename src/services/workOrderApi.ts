@@ -70,6 +70,31 @@ export type WorkOrderActSavePayload = {
   tcisWoLineDtoList: unknown[];
 };
 
+export type SecurityCheckDangerItem = {
+  actCode?: string | null;
+  checkLevel?: string | null;
+  checkResultCode?: string | null;
+  checkResultName?: string | null;
+  correctiveSuggestion?: string | null;
+  hint?: string | null;
+  order?: string | number | null;
+  [key: string]: unknown;
+};
+
+export type SecurityCheckPreview = {
+  downloadFileName?: string | null;
+  xdoCode?: string | null;
+  xmlMapIn?: {
+    completeTime?: string | null;
+    hasDanger?: string | null;
+    tables?: {
+      table?: SecurityCheckDangerItem[] | SecurityCheckDangerItem | null;
+    } | null;
+    [key: string]: unknown;
+  } | null;
+  [key: string]: unknown;
+};
+
 export type UploadedFile = {
   attachId?: string | null;
   bizId?: string | null;
@@ -104,6 +129,7 @@ const paths = {
   simple: "/api/workorder/tcisworkorder/simple",
   edit: "/api/workorder/tcisworkorder/edit",
   editAct: "/api/workorder/tcisworkorderAj/editAct",
+  securityCheckPreview: "/api/sl/tCisWoSecurityCheck/previewVo",
   userAjInfo: "/api/yhbz/bzUserInfo/detailForAj/",
   fileList: "/api/appsys/file/list",
   history: "/api/workorder/tcisworkorder/newCriteria",
@@ -175,8 +201,26 @@ function records<T>(data: T[] | { records?: T[] | null; list?: T[] | null; rows?
   return Array.isArray(data) ? data : data?.records ?? data?.list ?? data?.rows ?? [];
 }
 
-export function fetchWorkOrders(expectingDate: string) {
-  return request<CisWorkOrder[]>(paths.list, "POST", { expectingDate });
+function supportsLegacyWorkOrderDateFallback(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/401|403|未授权|登录|凭证|token/i.test(message)) return false;
+  return (
+    /\b(?:400|422)\b/.test(message) ||
+    /createTime|请求参数|参数错误|参数校验|未知字段|必填|不能为空/i.test(message)
+  );
+}
+
+export async function fetchWorkOrders(dateTime: string) {
+  try {
+    return await request<CisWorkOrder[]>(paths.list, "POST", {
+      createTime: dateTime,
+    });
+  } catch (error) {
+    if (!supportsLegacyWorkOrderDateFallback(error)) throw error;
+    return request<CisWorkOrder[]>(paths.list, "POST", {
+      expectingDate: dateTime,
+    });
+  }
 }
 
 function pageNumber(value: unknown, fallback: number) {
@@ -261,6 +305,13 @@ export function saveWorkOrderEdit(payload: WorkOrderDetail) {
 
 export function saveWorkOrderAct(payload: WorkOrderActSavePayload) {
   return request<string>(paths.editAct, "POST", payload);
+}
+
+export function fetchSecurityCheckPreview(woHeaderId: string, woYear: number) {
+  return request<SecurityCheckPreview>(
+    `${paths.securityCheckPreview}/${encodeURIComponent(woHeaderId)}/${encodeURIComponent(String(woYear))}`,
+    "GET",
+  );
 }
 
 export function fetchWorkOrderUserAjInfo(userInfoId: string, supplypointId: string) {
