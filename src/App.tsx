@@ -77,6 +77,7 @@ import {
   getWorkOrderStatus,
   matchesWorkOrderStatus,
   workOrderStatusOptions,
+  type BatchSubmitMode,
   type DrawerKind,
   type MainTab,
   type OrderStatus,
@@ -656,9 +657,7 @@ export default function App() {
   const ordersRequestSequenceRef = useRef(0);
   const [historyFiles, setHistoryFiles] = useState<Record<string, File>>({});
   const [historyMode, setHistoryMode] = useState<"manual" | "auto">("manual");
-  const [submitMode, setSubmitMode] = useState<"manual" | "historical">(
-    "manual",
-  );
+  const [submitMode, setSubmitMode] = useState<BatchSubmitMode>("manual");
   const [submitIntervalMinSeconds, setSubmitIntervalMinSeconds] = useState(5);
   const [submitIntervalMaxSeconds, setSubmitIntervalMaxSeconds] = useState(10);
   const [historyPhotos, setHistoryPhotos] = useState<HistoryPhotoCandidate[]>(
@@ -679,6 +678,9 @@ export default function App() {
     new Map<string, Promise<HistoryPhotoCacheEntry>>(),
   );
   const [libraryFile, setLibraryFile] = useState<File | null>(null);
+  const [detailCloseupFiles, setDetailCloseupFiles] = useState<
+    Record<string, File>
+  >({});
   const [reason, setReason] = useState("到访不遇-有居住痕迹");
   const [remark, setRemark] = useState("");
   const [customOperatorName, setCustomOperatorName] = useState(
@@ -804,6 +806,9 @@ export default function App() {
   const activeHistoryFile = activeOrder
     ? (historyFiles[activeOrder.id] ?? null)
     : null;
+  const activeDetailCloseupFile = activeOrder
+    ? (detailCloseupFiles[activeOrder.id] ?? null)
+    : null;
   const activeHistoryPhotoId = activeOrder
     ? (selectedHistoryPhotoIds[activeOrder.id] ?? "")
     : "";
@@ -818,6 +823,16 @@ export default function App() {
         sortDirection,
       ),
     [orders, selected, sortDirection, sortField],
+  );
+  const allManualReadyByOrder = useMemo(
+    () =>
+      Object.fromEntries(
+        selectedOrders.map((order) => [
+          order.id,
+          Boolean(historyFiles[order.id] && detailCloseupFiles[order.id]),
+        ]),
+      ),
+    [detailCloseupFiles, historyFiles, selectedOrders],
   );
   const pendingSelectedIds = useMemo(
     () => selectedOrders.map((order) => order.id),
@@ -1940,9 +1955,14 @@ export default function App() {
 
   const runBatch = async () => {
     if (
-      !libraryFile ||
       !selectedOrders.length ||
-      selectedOrders.some((order) => !historyFiles[order.id])
+      selectedOrders.some(
+        (order) =>
+          !historyFiles[order.id] ||
+          (submitMode === "all-manual"
+            ? !detailCloseupFiles[order.id]
+            : !libraryFile),
+      )
     )
       return;
     setBatchOrderIds(selectedOrders.map((order) => order.id));
@@ -1954,7 +1974,17 @@ export default function App() {
     for (let index = 0; index < selectedOrders.length; index += 1) {
       const order = selectedOrders[index];
       const historyFile = historyFiles[order.id];
+      const secondaryFile =
+        submitMode === "all-manual"
+          ? detailCloseupFiles[order.id]
+          : libraryFile;
       setCurrentIndex(index + 1);
+
+      if (!historyFile || !secondaryFile) {
+        setOrderStatus(order.id, "关闭失败");
+        setRunMessage(`${order.woNumber} 缺少当前工单的提交照片，已停止该单`);
+        continue;
+      }
 
       let closedBeforeSubmit: boolean;
       let hasLogBeforeSubmit: boolean;
@@ -2024,7 +2054,10 @@ export default function App() {
       submittedCount += 1;
       try {
         setRunMessage(`正在上传 ${order.woNumber} 的两张照片…`);
-        const uploaded = await uploadWorkOrderFiles([historyFile, libraryFile]);
+        const uploaded = await uploadWorkOrderFiles([
+          historyFile,
+          secondaryFile,
+        ]);
         const bizId = uploaded.data.bizId;
         setRunMessage(`正在关闭安检工单 ${order.woNumber}…`);
         queuePendingLogRetry(order);
@@ -2752,6 +2785,10 @@ export default function App() {
             onOpenAllWorkOrders={() => setScreen("all-work-orders")}
             onOpenBatchSubmit={() => {
               setLocalDetailOrder(null);
+              setHistoryFiles({});
+              setDetailCloseupFiles({});
+              setLibraryFile(null);
+              setSelectedHistoryPhotoIds({});
               setScreen("mode");
             }}
             onOpenResidentSecurityPrefill={() => setScreen("resident-security-prefill")}
@@ -2939,6 +2976,11 @@ export default function App() {
             onModeChange={(mode) => {
               setSubmitMode(mode);
               setHistoryMode(mode === "historical" ? "auto" : "manual");
+              if (mode === "all-manual") {
+                setHistoryFiles({});
+                setDetailCloseupFiles({});
+                setSelectedHistoryPhotoIds({});
+              }
             }}
             onIntervalMinChange={(value) => {
               setSubmitIntervalMinSeconds(value);
@@ -2986,7 +3028,8 @@ export default function App() {
             <PreparePage
             orders={selectedOrders}
             activeOrder={activeOrder}
-            historyFileName={activeHistoryFile?.name ?? ""}
+            submitMode={submitMode}
+            historyFile={activeHistoryFile}
             selectedHistoryPhotoId={activeHistoryPhotoId}
             historyMode={historyMode}
             historyPhotos={historyPhotos}
@@ -2995,7 +3038,9 @@ export default function App() {
               activeOrder.id,
             )}
             historyPhotoStatusByOrder={historyPhotoStatusByOrder}
-            libraryFileName={libraryFile?.name ?? ""}
+            libraryFile={libraryFile}
+            detailCloseupFile={activeDetailCloseupFile}
+            allManualReadyByOrder={allManualReadyByOrder}
             date={selectedDate}
             onDateChange={changeSelectedDate}
             onBack={() => setScreen("select")}
@@ -3028,12 +3073,29 @@ export default function App() {
               }));
             }}
             onPickLibraryFile={setLibraryFile}
+            onPickDetailCloseupFile={(file) => {
+              setDetailCloseupFiles((current) => {
+                const next = { ...current };
+                if (file) next[activeOrder.id] = file;
+                else delete next[activeOrder.id];
+                return next;
+              });
+            }}
             onNext={() => {
               if (
-                !libraryFile ||
-                selectedOrders.some((order) => !historyFiles[order.id])
+                selectedOrders.some(
+                  (order) =>
+                    !historyFiles[order.id] ||
+                    (submitMode === "all-manual"
+                      ? !detailCloseupFiles[order.id]
+                      : !libraryFile),
+                )
               ) {
-                setLoadError("请为每个工单选择一张历史照片，并选择本机补图");
+                setLoadError(
+                  submitMode === "all-manual"
+                    ? "请为每个工单分别选择门牌照片和到访不遇详细单近景照片"
+                    : "请为每个工单选择一张历史照片，并选择本机补图",
+                );
                 return;
               }
               setScreen("confirm");
@@ -3043,8 +3105,10 @@ export default function App() {
           {screen === "confirm" && (
             <ConfirmPage
             orders={selectedOrders}
+            submitMode={submitMode}
             historyFiles={historyFiles}
             libraryFile={libraryFile}
+            detailCloseupFiles={detailCloseupFiles}
             reason={reason}
             remark={remark}
             operatorName={operatorName}

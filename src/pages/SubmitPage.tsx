@@ -1,14 +1,15 @@
 import { AnimatePresence, m } from "framer-motion";
-import type { WorkOrder } from "../types/workOrder";
+import type { BatchSubmitMode, WorkOrder } from "../types/workOrder";
 import { DatePicker } from "../components/DatePicker";
 import { Icon } from "../components/Icon";
 import { WorkOrderList } from "../components/WorkOrderList";
 import { FilterButton } from "../components/Navigation";
 import { WorkflowSteps } from "../components/WorkflowSteps";
 
-export function SubmitPage({ orders, selected, mode, date, onDateChange, onBack, onFilter, onToggle, onToggleAll, onDetail, onPrepare }: { orders: WorkOrder[]; selected: string[]; mode: "manual" | "historical"; date: string; onDateChange: (value: string) => void; onBack: () => void; onFilter: () => void; onToggle: (id: string) => void; onToggleAll: () => void; onDetail: (order: WorkOrder) => void; onPrepare: () => void }) {
+export function SubmitPage({ orders, selected, mode, date, onDateChange, onBack, onFilter, onToggle, onToggleAll, onDetail, onPrepare }: { orders: WorkOrder[]; selected: string[]; mode: BatchSubmitMode; date: string; onDateChange: (value: string) => void; onBack: () => void; onFilter: () => void; onToggle: (id: string) => void; onToggleAll: () => void; onDetail: (order: WorkOrder) => void; onPrepare: () => void }) {
   const selectedInView = orders.filter((order) => selected.includes(order.id)).length;
-  return <><header className="topbar"><div><p className="eyebrow">步骤 2 · {mode === "historical" ? "历史到访不遇" : "手动图片提交"}</p><h1>选择提交工单</h1></div><div className="topbar-actions"><button className="text-button" onClick={onBack}>上一步</button><FilterButton onClick={onFilter} /><DatePicker value={date} onChange={onDateChange} /></div></header><WorkflowSteps current={2} /><section className="summary-strip submit-summary"><span><b>{selected.length}</b> 单已选</span><span className="summary-dot" /><span>可继续勾选</span><button className="select-all" onClick={onToggleAll}>{orders.length > 0 && selectedInView === orders.length ? "取消全选" : "一键全选"}</button></section><WorkOrderList orders={orders} selected={selected} onToggle={onToggle} onDetail={onDetail} /><AnimatePresence initial={false}>{selected.length > 0 && <m.button
+  const modeLabel = mode === "historical" ? "历史到访不遇" : mode === "all-manual" ? "全手动上传" : "手动图片提交";
+  return <><header className="topbar"><div><p className="eyebrow">步骤 2 · {modeLabel}</p><h1>选择提交工单</h1></div><div className="topbar-actions"><button className="text-button" onClick={onBack}>上一步</button><FilterButton onClick={onFilter} /><DatePicker value={date} onChange={onDateChange} /></div></header><WorkflowSteps current={2} /><section className="summary-strip submit-summary"><span><b>{selected.length}</b> 单已选</span><span className="summary-dot" /><span>可继续勾选</span><button className="select-all" onClick={onToggleAll}>{orders.length > 0 && selectedInView === orders.length ? "取消全选" : "一键全选"}</button></section><WorkOrderList orders={orders} selected={selected} onToggle={onToggle} onDetail={onDetail} /><AnimatePresence initial={false}>{selected.length > 0 && <m.button
     type="button"
     className="submit-fab"
     key="submit-fab"
