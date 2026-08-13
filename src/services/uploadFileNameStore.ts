@@ -5,12 +5,19 @@ const GENERATED_AT_INDEX = "generatedAt";
 const RANDOM_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789";
 const MAX_GENERATION_ATTEMPTS = 100;
 
-type UsedUploadFileName = {
+export type UploadFileNameStatus = "reserved" | "uploaded" | "failed";
+
+export type UsedUploadFileName = {
   name: string;
   generatedAt: string;
   sourceName: string;
   sourceSize: number;
   sourceLastModified: number;
+  previewDataUrl: string | null;
+  note: string;
+  status: UploadFileNameStatus;
+  uploadedAt: string | null;
+  failureMessage: string | null;
 };
 
 let generationSequence = 0;
@@ -124,7 +131,33 @@ function tryReserveName(database: IDBDatabase, record: UsedUploadFileName) {
   });
 }
 
-export async function reserveUniqueUploadFileName(file: File, date = new Date()) {
+function requestResult<T>(request: IDBRequest<T>, action: string) {
+  return new Promise<T>((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(databaseError(action, request.error));
+  });
+}
+
+function transactionDone(transaction: IDBTransaction, action: string) {
+  return new Promise<void>((resolve, reject) => {
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(databaseError(action, transaction.error));
+    transaction.onabort = () => reject(databaseError(action, transaction.error));
+  });
+}
+
+function normalizeRecord(value: UsedUploadFileName): UsedUploadFileName {
+  return {
+    ...value,
+    previewDataUrl: typeof value.previewDataUrl === "string" ? value.previewDataUrl : null,
+    note: typeof value.note === "string" ? value.note : "",
+    status: value.status === "uploaded" || value.status === "failed" ? value.status : "reserved",
+    uploadedAt: typeof value.uploadedAt === "string" ? value.uploadedAt : null,
+    failureMessage: typeof value.failureMessage === "string" ? value.failureMessage : null,
+  };
+}
+
+export async function reserveUniqueUploadFileName(file: File, previewDataUrl: string | null, date = new Date()) {
   const database = await openDatabase();
   try {
     for (let attempt = 0; attempt < MAX_GENERATION_ATTEMPTS; attempt += 1) {
@@ -135,6 +168,11 @@ export async function reserveUniqueUploadFileName(file: File, date = new Date())
         sourceName: file.name,
         sourceSize: file.size,
         sourceLastModified: file.lastModified,
+        previewDataUrl,
+        note: "",
+        status: "reserved",
+        uploadedAt: null,
+        failureMessage: null,
       });
       if (reserved) return name;
     }
@@ -142,4 +180,65 @@ export async function reserveUniqueUploadFileName(file: File, date = new Date())
     database.close();
   }
   throw new Error("连续生成图片名称均发生冲突，已停止上传以避免名称重复");
+}
+
+export async function listUsedUploadFileNames() {
+  const database = await openDatabase();
+  try {
+    const transaction = database.transaction(STORE_NAME, "readonly");
+    const request = transaction.objectStore(STORE_NAME).getAll();
+    const [values] = await Promise.all([
+      requestResult<UsedUploadFileName[]>(request, "读取图片编码记录"),
+      transactionDone(transaction, "读取图片编码记录"),
+    ]);
+    return values
+      .map(normalizeRecord)
+      .sort((left, right) => Date.parse(right.generatedAt) - Date.parse(left.generatedAt) || right.name.localeCompare(left.name));
+  } finally {
+    database.close();
+  }
+}
+
+export async function updateUploadFileNameStatus(
+  names: string[],
+  status: UploadFileNameStatus,
+  failureMessage: string | null = null,
+) {
+  if (!names.length) return;
+  const database = await openDatabase();
+  try {
+    const transaction = database.transaction(STORE_NAME, "readwrite");
+    const store = transaction.objectStore(STORE_NAME);
+    await Promise.all(names.map(async (name) => {
+      const current = await requestResult<UsedUploadFileName | undefined>(store.get(name), `读取图片编码 ${name}`);
+      if (!current) return;
+      store.put({
+        ...normalizeRecord(current),
+        status,
+        uploadedAt: status === "uploaded" ? new Date().toISOString() : null,
+        failureMessage: status === "failed" ? failureMessage : null,
+      } satisfies UsedUploadFileName);
+    }));
+    await transactionDone(transaction, "更新图片编码状态");
+  } finally {
+    database.close();
+  }
+}
+
+export async function updateUploadFileNamePreview(name: string, previewDataUrl: string | null, note: string) {
+  const database = await openDatabase();
+  try {
+    const transaction = database.transaction(STORE_NAME, "readwrite");
+    const store = transaction.objectStore(STORE_NAME);
+    const current = await requestResult<UsedUploadFileName | undefined>(store.get(name), `读取图片编码 ${name}`);
+    if (!current) throw new Error("图片编码记录不存在，可能已在其他页面中更改");
+    store.put({
+      ...normalizeRecord(current),
+      previewDataUrl,
+      note: note.trim().slice(0, 200),
+    } satisfies UsedUploadFileName);
+    await transactionDone(transaction, "保存图片预览数据");
+  } finally {
+    database.close();
+  }
 }

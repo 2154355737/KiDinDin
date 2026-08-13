@@ -16,6 +16,7 @@ export type MorePageProps = {
   onOpenAppointments: () => void;
   onOpenSettings: () => void;
   onOpenVisitVerify: () => void;
+  onOpenImageEncoding: () => void;
   showToolDescriptions?: boolean;
   onExportLocalData: () => void | Promise<void>;
   onImportLocalData: (json: string, fileName: string) => void | Promise<void>;
@@ -36,6 +37,7 @@ export function MorePage({
   onOpenAppointments,
   onOpenSettings,
   onOpenVisitVerify,
+  onOpenImageEncoding,
   showToolDescriptions = true,
   onExportLocalData,
   onImportLocalData,
@@ -123,6 +125,11 @@ export function MorePage({
         <button type="button" className="more-feature-card" onClick={onOpenVisitVerify}>
           <span className="more-feature-icon"><Icon name="check" size={20} /></span>
           <span className="more-feature-copy"><b>到访验证</b><small>手动上传图片验证增广效果</small></span>
+          <Icon name="chevron" size={17} />
+        </button>
+        <button type="button" className="more-feature-card" onClick={onOpenImageEncoding}>
+          <span className="more-feature-icon"><Icon name="database" size={20} /></span>
+          <span className="more-feature-copy"><b>图片编码记录</b><small>查看编码使用状态与本地预览</small></span>
           <Icon name="chevron" size={17} />
         </button>
         <button type="button" className="more-feature-card" onClick={onOpenSettings}>

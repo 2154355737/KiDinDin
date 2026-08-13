@@ -4,6 +4,7 @@ import {
   nativeRequest,
   reportWorkOrderAuthExpired,
 } from "./tauri";
+import { updateUploadFileNameStatus } from "./uploadFileNameStore";
 
 export type ApiEnvelope<T> = { code: number; msg: string | null; data: T };
 
@@ -321,12 +322,21 @@ export function fetchWorkOrderUserAjInfo(userInfoId: string, supplypointId: stri
 
 export async function uploadWorkOrderFiles(files: File[], bizId = "") {
   const requestStartedAt = Date.now();
-  const payload = await nativeInvoke<ApiEnvelope<{ bizId: string; sysAttachList?: UploadedFile[] | null }>>(
-    "cis_upload_files",
-    { bizId: bizId || null, files: await Promise.all(files.map(fileToNativeUpload)) }
-  );
+  const nativeFiles = await Promise.all(files.map(fileToNativeUpload));
+  const names = nativeFiles.map((file) => file.name);
+  let payload: ApiEnvelope<{ bizId: string; sysAttachList?: UploadedFile[] | null }>;
+  try {
+    payload = await nativeInvoke<ApiEnvelope<{ bizId: string; sysAttachList?: UploadedFile[] | null }>>(
+      "cis_upload_files",
+      { bizId: bizId || null, files: nativeFiles }
+    );
+  } catch (error) {
+    void updateUploadFileNameStatus(names, "failed", error instanceof Error ? error.message : String(error)).catch(() => undefined);
+    throw error;
+  }
   if (payload.code !== 0) {
     const error = new Error(payload.msg || `上传业务返回 ${payload.code}`);
+    void updateUploadFileNameStatus(names, "failed", error.message).catch(() => undefined);
     reportWorkOrderAuthExpired(error, {
       command: "cis_upload_files",
       path: "/api/appsys/file/upload",
@@ -334,7 +344,12 @@ export async function uploadWorkOrderFiles(files: File[], bizId = "") {
     });
     throw error;
   }
-  if (!payload.data?.bizId) throw new Error("上传响应缺少 data.bizId");
+  if (!payload.data?.bizId) {
+    const error = new Error("上传响应缺少 data.bizId");
+    void updateUploadFileNameStatus(names, "failed", error.message).catch(() => undefined);
+    throw error;
+  }
+  void updateUploadFileNameStatus(names, "uploaded").catch(() => undefined);
   return payload;
 }
 

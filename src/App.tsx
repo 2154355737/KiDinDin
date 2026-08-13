@@ -109,6 +109,11 @@ const MorePage = lazy(() =>
     default: module.MorePage,
   })),
 );
+const ImageEncodingPage = lazy(() =>
+  import("./pages/ImageEncodingPage").then((module) => ({
+    default: module.ImageEncodingPage,
+  })),
+);
 const AllWorkOrdersPage = lazy(() =>
   import("./pages/AllWorkOrdersPage").then((module) => ({
     default: module.AllWorkOrdersPage,
@@ -2560,6 +2565,7 @@ export default function App() {
       case "vacant-room-fill":
       case "resident-security-prefill":
       case "visit-verify":
+      case "image-encoding":
       case "all-work-orders":
         setScreen("orders");
         setMainTab("more");
@@ -2806,6 +2812,7 @@ export default function App() {
               setScreen("settings");
             }}
             onOpenVisitVerify={() => setScreen("visit-verify")}
+            onOpenImageEncoding={() => setScreen("image-encoding")}
             showToolDescriptions={appSettings.display.showToolDescriptions}
             onExportLocalData={exportLocalData}
             onImportLocalData={importLocalData}
@@ -2860,6 +2867,14 @@ export default function App() {
           )}
           {screen === "visit-verify" && (
             <VisitVerifyPage
+            onBack={() => {
+              setScreen("orders");
+              setMainTab("more");
+            }}
+            />
+          )}
+          {screen === "image-encoding" && (
+            <ImageEncodingPage
             onBack={() => {
               setScreen("orders");
               setMainTab("more");

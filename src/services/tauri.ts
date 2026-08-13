@@ -108,6 +108,20 @@ function loadImage(file: File) {
   });
 }
 
+async function createPreviewDataUrl(blob: Blob, sourceName: string) {
+  const file = new File([blob], sourceName, { type: "image/jpeg" });
+  const image = await loadImage(file);
+  const maxEdge = 360;
+  const scale = Math.min(1, maxEdge / Math.max(image.naturalWidth, image.naturalHeight));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+  canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error(`图片 ${sourceName} 生成本地预览失败`);
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", 0.72);
+}
+
 async function normalizeJpeg(file: File) {
   const header = new Uint8Array(await file.slice(0, 3).arrayBuffer());
   const isJpeg = header.length === 3 && header[0] === 0xff && header[1] === 0xd8 && header[2] === 0xff;
@@ -133,7 +147,8 @@ async function normalizeJpeg(file: File) {
 
 export async function fileToNativeUpload(file: File): Promise<NativeUploadFile> {
   const jpeg = await normalizeJpeg(file);
-  const name = await reserveUniqueUploadFileName(file);
+  const previewDataUrl = await createPreviewDataUrl(jpeg, file.name);
+  const name = await reserveUniqueUploadFileName(file, previewDataUrl);
   const base64 = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error("读取图片失败"));
