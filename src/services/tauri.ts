@@ -1,3 +1,5 @@
+import { reserveUniqueUploadFileName } from "./uploadFileNameStore";
+
 export type AuthStatus = {
   authenticated: boolean;
   employeeNumber: string | null;
@@ -90,15 +92,56 @@ export function nativeInvoke<T>(command: string, args?: Record<string, unknown>)
     });
 }
 
+function loadImage(file: File) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error(`图片 ${file.name} 无法解码`));
+    };
+    image.src = objectUrl;
+  });
+}
+
+async function normalizeJpeg(file: File) {
+  const header = new Uint8Array(await file.slice(0, 3).arrayBuffer());
+  const isJpeg = header.length === 3 && header[0] === 0xff && header[1] === 0xd8 && header[2] === 0xff;
+  if (isJpeg) return new Blob([file], { type: "image/jpeg" });
+
+  const image = await loadImage(file);
+  const canvas = document.createElement("canvas");
+  canvas.width = image.naturalWidth;
+  canvas.height = image.naturalHeight;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error(`图片 ${file.name} 转换 JPEG 失败`);
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(image, 0, 0);
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => blob ? resolve(blob) : reject(new Error(`图片 ${file.name} 转换 JPEG 失败`)),
+      "image/jpeg",
+      0.92,
+    );
+  });
+}
+
 export async function fileToNativeUpload(file: File): Promise<NativeUploadFile> {
+  const jpeg = await normalizeJpeg(file);
+  const name = await reserveUniqueUploadFileName(file);
   const base64 = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error("读取图片失败"));
     reader.onload = () => resolve(String(reader.result ?? ""));
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(jpeg);
   });
 
-  return { base64, mime: file.type || undefined, name: file.name };
+  return { base64, mime: "image/jpeg", name };
 }
 
 export function nativeRequest(path: string, method: string, body?: unknown) {
