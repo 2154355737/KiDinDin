@@ -545,15 +545,32 @@ async fn cis_request(
 }
 
 #[tauri::command]
-async fn cis_upload_files(files: Vec<UploadFile>, biz_id: Option<String>, state: State<'_, CisState>) -> Result<Value, String> {
-    if files.is_empty() { return Err("请至少选择一张图片".into()); }
+async fn cis_upload_files(
+    files: Vec<UploadFile>,
+    biz_id: Option<String>,
+    add_watermark: Option<bool>,
+    state: State<'_, CisState>,
+) -> Result<Value, String> {
+    if files.is_empty() {
+        return Err("请至少选择一张图片".into());
+    }
     let session = state.session.lock().map_err(|_| "会话锁定失败")?.clone().ok_or_else(|| "登录已失效，请重新粘贴登录凭据".to_string())?;
+    let security_watermark = add_watermark.unwrap_or(false);
     let mut form = multipart::Form::new()
-        .text("watermarkStyle.rotate", "")
+        .text(
+            "watermarkStyle.rotate",
+            if security_watermark { "0" } else { "" },
+        )
         .text("bizId", biz_id.unwrap_or_default())
         .text("isIphone", "false")
-        .text("addWatermark", "false")
-        .text("watermarkStyle.color", "");
+        .text(
+            "addWatermark",
+            if security_watermark { "true" } else { "false" },
+        )
+        .text(
+            "watermarkStyle.color",
+            if security_watermark { "EE2C2C" } else { "" },
+        );
     for file in files {
         let encoded = file.base64.rsplit(',').next().unwrap_or(&file.base64);
         let bytes = STANDARD.decode(encoded).map_err(|_| format!("图片 {} 的编码无效", file.name))?;
@@ -573,7 +590,9 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(vacant_room::init());
     #[cfg(mobile)]
-    let builder = builder.plugin(tauri_plugin_biometric::init());
+    let builder = builder
+        .plugin(tauri_plugin_biometric::init())
+        .plugin(tauri_plugin_barcode_scanner::init());
     builder
         .manage(CisState::default())
         .manage(vacant_room::VacantRoomImageState::default())

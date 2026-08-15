@@ -96,6 +96,12 @@ export type SecurityCheckPreview = {
   [key: string]: unknown;
 };
 
+export type SupplyPointScanAddress = {
+  supplypointScanId?: string | number | null;
+  xz?: string | null;
+  [key: string]: unknown;
+};
+
 export type UploadedFile = {
   attachId?: string | null;
   bizId?: string | null;
@@ -320,7 +326,29 @@ export function fetchWorkOrderUserAjInfo(userInfoId: string, supplypointId: stri
   return request<Record<string, unknown>>(`${paths.userAjInfo}?${query}`, "POST");
 }
 
-export async function uploadWorkOrderFiles(files: File[], bizId = "") {
+export function fetchSupplyPointScanAddress(supplypointId: string) {
+  return request<SupplyPointScanAddress | null>(
+    `/api/yhbz/supplypointscanaddress/criteria/${encodeURIComponent(supplypointId)}`,
+    "POST",
+  );
+}
+
+export function bindSupplyPointScanAddress(
+  supplypointId: string,
+  url: string,
+) {
+  return request<SupplyPointScanAddress>(
+    "/api/yhbz/supplypointscanaddress/scanAddress",
+    "POST",
+    { supplypointId, url },
+  );
+}
+
+export async function uploadWorkOrderFiles(
+  files: File[],
+  bizId = "",
+  options: { securityWatermark?: boolean } = {},
+) {
   const requestStartedAt = Date.now();
   const nativeFiles = await Promise.all(files.map(fileToNativeUpload));
   const names = nativeFiles.map((file) => file.name);
@@ -328,7 +356,11 @@ export async function uploadWorkOrderFiles(files: File[], bizId = "") {
   try {
     payload = await nativeInvoke<ApiEnvelope<{ bizId: string; sysAttachList?: UploadedFile[] | null }>>(
       "cis_upload_files",
-      { bizId: bizId || null, files: nativeFiles }
+      {
+        addWatermark: Boolean(options.securityWatermark),
+        bizId: bizId || null,
+        files: nativeFiles,
+      },
     );
   } catch (error) {
     void updateUploadFileNameStatus(names, "failed", error instanceof Error ? error.message : String(error)).catch(() => undefined);

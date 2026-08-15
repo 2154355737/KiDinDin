@@ -2,8 +2,11 @@ import {
   fetchSecurityCheckPreview,
   fetchHistoricalWorkOrders,
   fetchWorkOrderNailInfo,
+  postWorkOrderForEdit,
   saveWorkOrderAct,
+  uploadWorkOrderFiles,
   type SecurityCheckPreview,
+  type WorkOrderDetail,
   type WorkOrderNailInfo,
 } from "./workOrderApi";
 import {
@@ -22,9 +25,37 @@ const RESIDENT_SECURITY_MAIN_TYPE_NAME = "安检";
 const RESIDENT_SECURITY_DETAIL_TYPE = "401";
 const RESIDENT_SECURITY_DETAIL_TYPE_NAME = "居民安检";
 const COMPLETED_STATUS_CODE = "50";
+const GAS_METER_PHOTO_CODE = "RAB000003";
 
 const COPYABLE_ATTRIBUTE_TYPES = new Set(["50", "60"]);
 const INPUT_ATTRIBUTE_TYPES = new Set(["10", "20", "30", "80"]);
+const COPYABLE_TEXT_CODES = new Set([
+  "YQRKJL0001",
+  "JSRGSYNX01",
+  "ZJQTPP0001",
+  "ZJYNX0001",
+  "SYNX000004",
+  "SS00000002",
+  "CNLXH00001",
+  "CNLSYNX001",
+]);
+const PREFER_HISTORY_CHOICE_CODES = new Set([
+  "SFDJLR001",
+  "LGWZ000003",
+  "LGSFFB0001",
+  "TFKWXKJ001",
+  "HNLGCY0001",
+  "HNLGTG0001",
+  "TGAZYQ0001",
+  "SFAZHJ000001",
+  "SFYTYQ0000002",
+  "AJRQBSFYBT1",
+  "ZJZKLH0005",
+]);
+const UNTYPED_CHOICE_CODES = new Set([
+  "SFYTYQ0000002",
+  "AJRQBSFYBT1",
+]);
 const PROTECTED_ROOT_CODES = new Set([
   "AQKXXBH01",
   "BJXX0001",
@@ -124,6 +155,8 @@ export type ResidentSecurityPrefillPreview = {
   hazardSource: "current" | "history" | "unavailable";
   hazardStatus: "clear" | "danger" | "unknown";
   hazards: ResidentSecurityHazard[];
+  gasMeterPhotoCount: number;
+  gasMeterPhotoStatus: "not-requested" | "uploaded";
   lineCount: number;
   prefillCount: number;
   preservedChoiceCount: number;
@@ -177,13 +210,25 @@ function booleanChoice(value: unknown): boolean | null {
   return null;
 }
 
-function shouldCopyHistoryChoice(
+function samePrefillValue(left: unknown, right: unknown) {
+  const leftBoolean = booleanChoice(left);
+  const rightBoolean = booleanChoice(right);
+  if (leftBoolean !== null && rightBoolean !== null) {
+    return leftBoolean === rightBoolean;
+  }
+  return text(left) === text(right);
+}
+
+function shouldCopyHistoryValue(
   code: string,
   currentValue: unknown,
   historyValue: unknown,
   definitions: Map<string, AttributeDefinition>,
 ) {
+  if (!meaningful(historyValue)) return false;
   if (!meaningful(currentValue)) return true;
+  if (samePrefillValue(currentValue, historyValue)) return false;
+  if (PREFER_HISTORY_CHOICE_CODES.has(code)) return true;
   if (definitions.get(code)?.attrType !== "60") return false;
   // editAct serializes untouched switches as false, so a prior true must win.
   return booleanChoice(currentValue) === false && booleanChoice(historyValue) === true;
@@ -227,11 +272,40 @@ function attributeDefinitions(actSet: Record<string, unknown>) {
   return definitions;
 }
 
-function nailParts(nail: WorkOrderNailInfo): NailParts {
+function nailParts(
+  nail: WorkOrderNailInfo,
+  completeDetail?: WorkOrderDetail,
+  detailLabel = "工单",
+): NailParts {
   const actSet = record(nail.tcisWoActSetDto);
-  const workOrder = record(nail.tcisWorkOrderDto);
-  const header = record(workOrder.tcisWoHeaderDto);
-  const lines = array(workOrder.tcisWoLineDtoList).map(
+  const nailWorkOrder = record(nail.tcisWorkOrderDto);
+  const nailHeader = record(nailWorkOrder.tcisWoHeaderDto);
+  const detail = record(completeDetail);
+  const detailHeader = record(detail.tcisWoHeaderDto);
+  if (completeDetail) {
+    const nailWoHeaderId = text(nailHeader.woHeaderId);
+    const detailWoHeaderId = text(detailHeader.woHeaderId);
+    if (
+      !nailWoHeaderId ||
+      !detailWoHeaderId ||
+      nailWoHeaderId !== detailWoHeaderId
+    ) {
+      throw new Error(`${detailLabel}完整详情与表单详情的工单 ID 不一致`);
+    }
+    const nailWoYear = integer(nailHeader.woYear);
+    const detailWoYear = integer(detailHeader.woYear);
+    if (nailWoYear && detailWoYear && nailWoYear !== detailWoYear) {
+      throw new Error(`${detailLabel}完整详情与表单详情的年份不一致`);
+    }
+  }
+  const header = {
+    ...nailHeader,
+    ...detailHeader,
+  };
+  const lineSource = Array.isArray(completeDetail?.tcisWoLineDtoList)
+    ? completeDetail.tcisWoLineDtoList
+    : nailWorkOrder.tcisWoLineDtoList;
+  const lines = array(lineSource).map(
     (line) => record(line) as WorkOrderLine,
   );
   return {
@@ -414,6 +488,31 @@ function compatibleChoice(
   return current.flexSetCode === history.flexSetCode;
 }
 
+function compatibleCopyableField(
+  code: string,
+  currentDefinitions: Map<string, AttributeDefinition>,
+  historyDefinitions: Map<string, AttributeDefinition>,
+) {
+  const current = currentDefinitions.get(code);
+  const history = historyDefinitions.get(code);
+  if (COPYABLE_TEXT_CODES.has(code)) {
+    if (!current && !history) return true;
+    return Boolean(
+      current &&
+        history &&
+        INPUT_ATTRIBUTE_TYPES.has(current.attrType) &&
+        current.attrType === history.attrType,
+    );
+  }
+  if (UNTYPED_CHOICE_CODES.has(code)) {
+    return (
+      (!current || COPYABLE_ATTRIBUTE_TYPES.has(current.attrType)) &&
+      (!history || COPYABLE_ATTRIBUTE_TYPES.has(history.attrType))
+    );
+  }
+  return compatibleChoice(code, currentDefinitions, historyDefinitions);
+}
+
 function exclusionKind(
   parentCode: string,
   code: string,
@@ -528,7 +627,7 @@ function mergeHistoricalDevices(
     for (const [detailCode, historyValue] of Object.entries(historyItem)) {
       if (DEVICE_STRUCTURAL_KEYS.has(detailCode)) continue;
       if (
-        compatibleChoice(
+        compatibleCopyableField(
           detailCode,
           currentDefinitions,
           historyDefinitions,
@@ -536,7 +635,7 @@ function mergeHistoricalDevices(
       ) {
         if (
           meaningful(historyValue) &&
-          shouldCopyHistoryChoice(
+          shouldCopyHistoryValue(
             detailCode,
             mergedItem[detailCode],
             historyValue,
@@ -578,9 +677,11 @@ export function prepareResidentSecurityPrefillPayload(
   currentNail: WorkOrderNailInfo,
   historyNail: WorkOrderNailInfo,
   historyCandidate: Record<string, unknown>,
+  currentCompleteDetail?: WorkOrderDetail,
+  historyCompleteDetail?: WorkOrderDetail,
 ): PreparedPrefill {
-  const current = nailParts(currentNail);
-  const history = nailParts(historyNail);
+  const current = nailParts(currentNail, currentCompleteDetail, "当前工单");
+  const history = nailParts(historyNail, historyCompleteDetail, "历史工单");
   assertResidentSecurityHeader(current.header, "20");
   assertResidentSecurityHeader(history.header, COMPLETED_STATUS_CODE);
   const actSetId = assertResidentSecurityActSet(current.actSet);
@@ -659,10 +760,14 @@ export function prepareResidentSecurityPrefillPayload(
       if (!deviceGroup && historyLine && meaningful(historyLine.attrVal)) {
         if (
           !PROTECTED_ROOT_CODES.has(code) &&
-          compatibleChoice(code, current.definitions, history.definitions)
+          compatibleCopyableField(
+            code,
+            current.definitions,
+            history.definitions,
+          )
         ) {
           if (
-            shouldCopyHistoryChoice(
+            shouldCopyHistoryValue(
               code,
               attrVal,
               historyLine.attrVal,
@@ -704,7 +809,7 @@ export function prepareResidentSecurityPrefillPayload(
           if (!meaningful(historyValue)) continue;
           if (
             !PROTECTED_ROOT_CODES.has(code) &&
-            compatibleChoice(
+            compatibleCopyableField(
               detailCode,
               current.definitions,
               history.definitions,
@@ -712,7 +817,7 @@ export function prepareResidentSecurityPrefillPayload(
           ) {
             const mergedDetail = record(attrDetail);
             if (
-              shouldCopyHistoryChoice(
+              shouldCopyHistoryValue(
                 detailCode,
                 mergedDetail[detailCode],
                 historyValue,
@@ -781,6 +886,8 @@ export function prepareResidentSecurityPrefillPayload(
       hazardSource: "unavailable",
       hazardStatus: "unknown",
       hazards: [],
+      gasMeterPhotoCount: 0,
+      gasMeterPhotoStatus: "not-requested",
       lineCount: mergedLines.length,
       prefillCount,
       preservedChoiceCount,
@@ -799,7 +906,12 @@ async function prepareResidentSecurityPrefill(
   }
 
   const currentResponse = await fetchWorkOrderNailInfo(order.woHeaderId);
-  const current = nailParts(currentResponse.data);
+  const currentDetailResponse = await postWorkOrderForEdit(order.woHeaderId);
+  const current = nailParts(
+    currentResponse.data,
+    currentDetailResponse.data,
+    "当前工单",
+  );
   assertResidentSecurityHeader(current.header, "20");
   assertResidentSecurityActSet(current.actSet);
   const woYear = integer(current.header.woYear);
@@ -851,11 +963,14 @@ async function prepareResidentSecurityPrefill(
     if (!historyWoHeaderId || historyWoHeaderId === order.woHeaderId) continue;
     try {
       const historyResponse = await fetchWorkOrderNailInfo(historyWoHeaderId);
+      const historyDetailResponse = await postWorkOrderForEdit(historyWoHeaderId);
       const prepared = prepareResidentSecurityPrefillPayload(
         order,
         currentResponse.data,
         historyResponse.data,
         candidate,
+        currentDetailResponse.data,
+        historyDetailResponse.data,
       );
       if (
         prepared.preview.prefillCount > 0 ||
@@ -919,11 +1034,30 @@ export async function inspectResidentSecurityPrefill(order: WorkOrder) {
 export async function saveResidentSecurityPrefill(
   order: WorkOrder,
   expectedHistoryWoHeaderId: string,
+  gasMeterPhoto?: File,
 ) {
   const prepared = await prepareResidentSecurityPrefill(
     order,
     expectedHistoryWoHeaderId,
   );
+  if (gasMeterPhoto) {
+    const gasMeterPhotoLine = prepared.payload.tcisWoLineDtoList.find(
+      (line) => line.attrCode === GAS_METER_PHOTO_CODE,
+    );
+    if (!gasMeterPhotoLine) {
+      throw new Error("今年安检表单缺少燃气表图片字段 RAB000003");
+    }
+    const uploaded = await uploadWorkOrderFiles([gasMeterPhoto], "", {
+      securityWatermark: true,
+    });
+    gasMeterPhotoLine.attrVal = uploaded.data.bizId;
+    prepared.preview.gasMeterPhotoCount = Math.max(
+      uploaded.data.sysAttachList?.length ?? 0,
+      1,
+    );
+    prepared.preview.gasMeterPhotoStatus = "uploaded";
+    prepared.preview.prefillCount += 1;
+  }
   if (prepared.preview.prefillCount === 0) {
     return withSecurityCheckPreview(
       prepared.preview,

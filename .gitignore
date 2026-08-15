@@ -50,3 +50,6 @@ Thumbs.db
 coverage
 src-tauri/gen/android/app/src/main/res/mipmap-xxhdpi/ic_launcher_foreground.png
 .reasonix/
+
+# Local reverse-engineering references (keep on this machine, never commit)
+local-reference/dingtalk-miniapp/

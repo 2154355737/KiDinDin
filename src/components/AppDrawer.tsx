@@ -1,4 +1,9 @@
-import type { ExchangeLog, WorkOrderDetail } from "../services/workOrderApi";
+import {
+  bindSupplyPointScanAddress,
+  fetchSupplyPointScanAddress,
+  type ExchangeLog,
+  type WorkOrderDetail,
+} from "../services/workOrderApi";
 import {
   useEffect,
   useRef,
@@ -9,6 +14,12 @@ import {
   type SetStateAction,
 } from "react";
 import { createPortal } from "react-dom";
+import {
+  checkPermissions as checkBarcodePermissions,
+  Format as BarcodeFormat,
+  requestPermissions as requestBarcodePermissions,
+  scan as scanBarcode,
+} from "@tauri-apps/plugin-barcode-scanner";
 import type {
   AccentId,
   AppearanceSettings,
@@ -33,6 +44,7 @@ import {
 import { Icon } from "./Icon";
 import { PhotoTile } from "./PhotoTile";
 import { StatusBadge } from "./WorkOrderList";
+import { UploadFilePicker } from "./UploadFilePicker";
 import {
   inspectResidentSecurityPrefill,
   isResidentSecurityPrefillTarget,
@@ -51,6 +63,15 @@ function text(value: unknown) {
   return typeof value === "string" || typeof value === "number"
     ? String(value)
     : "—";
+}
+
+function firstNonEmptyText(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value !== "string" && typeof value !== "number") continue;
+    const normalized = String(value).trim();
+    if (normalized) return normalized;
+  }
+  return "";
 }
 
 function normalizedExpiry(expiresAt: number | null) {
@@ -95,11 +116,84 @@ function DetailSection({
   );
 }
 
-function DetailRow({ label, value }: { label: string; value: unknown }) {
+async function copyToClipboard(value: string) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(value);
+      return;
+    } catch {
+      // WebView 未授权 Clipboard API 时继续使用选区复制兼容方案。
+    }
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  const copied = document.execCommand("copy");
+  textarea.remove();
+  if (!copied) throw new Error("当前环境不支持复制");
+}
+
+function DetailRow({
+  copyable = false,
+  label,
+  value,
+}: {
+  copyable?: boolean;
+  label: string;
+  value: unknown;
+}) {
+  const [copyStatus, setCopyStatus] = useState<
+    "idle" | "copied" | "failed"
+  >("idle");
+  const displayValue = text(value);
+  const canCopy = copyable && displayValue !== "—";
+
+  useEffect(() => {
+    if (copyStatus === "idle") return;
+    const timeout = window.setTimeout(() => setCopyStatus("idle"), 1800);
+    return () => window.clearTimeout(timeout);
+  }, [copyStatus]);
+
+  const copyValue = async () => {
+    if (!canCopy) return;
+    try {
+      await copyToClipboard(displayValue);
+      setCopyStatus("copied");
+    } catch {
+      setCopyStatus("failed");
+    }
+  };
+
   return (
     <div>
       <dt>{label}</dt>
-      <dd>{text(value)}</dd>
+      <dd>
+        {canCopy ? (
+          <button
+            type="button"
+            className={`detail-copy-value status-${copyStatus}`}
+            aria-label={`${copyStatus === "copied" ? "已复制" : "复制"}${label}：${displayValue}`}
+            title={`点击复制${label}`}
+            onClick={() => void copyValue()}
+          >
+            <span>{displayValue}</span>
+            <small role="status" aria-live="polite">
+              {copyStatus === "copied"
+                ? "已复制"
+                : copyStatus === "failed"
+                  ? "复制失败"
+                  : ""}
+            </small>
+            <Icon name={copyStatus === "copied" ? "check" : "copy"} size={13} />
+          </button>
+        ) : (
+          displayValue
+        )}
+      </dd>
     </div>
   );
 }
@@ -254,9 +348,19 @@ export function AppDrawer({
     "idle" | "running" | "success" | "error"
   >("idle");
   const [quickPrefillConfirmOpen, setQuickPrefillConfirmOpen] = useState(false);
+  const [quickPrefillGasMeterPhoto, setQuickPrefillGasMeterPhoto] =
+    useState<File | null>(null);
   const [quickPrefillMessage, setQuickPrefillMessage] = useState("");
   const [quickPrefillPreview, setQuickPrefillPreview] =
     useState<ResidentSecurityPrefillPreview | null>(null);
+  const [oneStandardOpen, setOneStandardOpen] = useState(false);
+  const [oneStandardQrValue, setOneStandardQrValue] = useState("");
+  const [oneStandardAddress, setOneStandardAddress] = useState("");
+  const [oneStandardMessage, setOneStandardMessage] = useState("");
+  const [oneStandardStatus, setOneStandardStatus] = useState<
+    "idle" | "running" | "success" | "error"
+  >("idle");
+  const [oneStandardScanning, setOneStandardScanning] = useState(false);
   const [refreshingSession, setRefreshingSession] = useState(false);
   const [refreshMessage, setRefreshMessage] = useState("");
   const [refreshTokenInput, setRefreshTokenInput] = useState("");
@@ -279,28 +383,53 @@ export function AppDrawer({
   const canOpenResidentSecurityPrefill = Boolean(
     order && isResidentSecurityPrefillTarget(order),
   );
+  const supplyPointId = firstNonEmptyText(
+    header.supplyPointId,
+    header.supplypointId,
+    supplypoint.supplypointId,
+    supplypoint.supplyPointId,
+    asObject(order?.raw).supplyPointId,
+    asObject(order?.raw).supplypointId,
+  );
   useEffect(() => {
     setExchangeLogs(null);
     setExchangeLogsLoading(false);
     setExchangeLogsError("");
     setQuickPrefillStatus("idle");
     setQuickPrefillConfirmOpen(false);
+    setQuickPrefillGasMeterPhoto(null);
     setQuickPrefillMessage("");
     setQuickPrefillPreview(null);
+    setOneStandardOpen(false);
+    setOneStandardQrValue("");
+    setOneStandardAddress("");
+    setOneStandardMessage("");
+    setOneStandardStatus("idle");
+    setOneStandardScanning(false);
   }, [order?.woHeaderId]);
 
   const runResidentSecurityPrefill = async () => {
-    if (!order || !canOpenResidentSecurityPrefill || quickPrefillStatus === "running")
+    if (
+      !order ||
+      !canOpenResidentSecurityPrefill ||
+      quickPrefillStatus === "running"
+    )
       return;
+    const gasMeterPhoto = quickPrefillGasMeterPhoto;
     setQuickPrefillConfirmOpen(false);
     setQuickPrefillStatus("running");
-    setQuickPrefillMessage("正在核对上一年工单并预存选择结果…");
+    setQuickPrefillMessage(
+      gasMeterPhoto
+        ? "正在核对上一年工单、上传燃气表照片并预存…"
+        : "正在核对上一年工单并预存已批准内容…",
+    );
     setQuickPrefillPreview(null);
     try {
       const inspected = await inspectResidentSecurityPrefill(order);
       const preview = await saveResidentSecurityPrefill(
         order,
         inspected.historyWoHeaderId,
+        gasMeterPhoto ?? undefined,
       );
       setQuickPrefillPreview(preview);
       setQuickPrefillStatus("success");
@@ -310,13 +439,110 @@ export function AppDrawer({
           : preview.hazardMessage;
       setQuickPrefillMessage(
         preview.prefillCount > 0
-          ? `已预填 ${preview.prefillCount} 项，${hazardResult}`
+          ? `已预填 ${preview.prefillCount} 项，${
+              preview.gasMeterPhotoStatus === "uploaded"
+                ? "燃气表照片已加安检水印，"
+                : ""
+            }${hazardResult}`
           : `无需重复预填，${hazardResult}`,
       );
+      setQuickPrefillGasMeterPhoto(null);
     } catch (error) {
       setQuickPrefillStatus("error");
       setQuickPrefillMessage(
         error instanceof Error ? error.message : "安检预填失败",
+      );
+    }
+  };
+
+  const openOneStandard = async () => {
+    if (!supplyPointId || oneStandardStatus === "running") return;
+    setOneStandardOpen(true);
+    setOneStandardQrValue("");
+    setOneStandardStatus("running");
+    setOneStandardMessage("正在查询当前一标三实绑定状态…");
+    try {
+      const response = await fetchSupplyPointScanAddress(supplyPointId);
+      const boundAddress = firstNonEmptyText(response.data?.xz);
+      setOneStandardAddress(boundAddress);
+      setOneStandardStatus(boundAddress ? "success" : "idle");
+      setOneStandardMessage(
+        boundAddress ? `当前已绑定：${boundAddress}` : "当前供气点尚未绑定",
+      );
+    } catch (error) {
+      setOneStandardStatus("error");
+      setOneStandardMessage(
+        `绑定状态查询失败：${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  };
+
+  const scanOneStandardQrCode = async () => {
+    if (oneStandardScanning || oneStandardStatus === "running") return;
+    if (!isNativeRuntime()) {
+      setOneStandardStatus("error");
+      setOneStandardMessage("摄像头扫码仅支持 KiDinDin 安卓应用，请在下方粘贴二维码内容");
+      return;
+    }
+    setOneStandardScanning(true);
+    setOneStandardStatus("running");
+    setOneStandardMessage("正在打开摄像头，请将二维码放入取景框…");
+    try {
+      let permission = await checkBarcodePermissions();
+      if (permission !== "granted") {
+        permission = await requestBarcodePermissions();
+      }
+      if (permission !== "granted") {
+        throw new Error("未获得摄像头权限，请在系统设置中允许 KiDinDin 使用摄像头");
+      }
+      const result = await scanBarcode({
+        cameraDirection: "back",
+        formats: [BarcodeFormat.QRCode],
+        windowed: false,
+      });
+      const value = result.content.trim();
+      if (!value) throw new Error("没有识别到有效的二维码内容");
+      setOneStandardQrValue(value);
+      setOneStandardMessage("二维码已识别，请核对后确认绑定");
+      setOneStandardStatus("idle");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const cancelled = /cancel|canceled|cancelled|取消/i.test(message);
+      setOneStandardStatus(cancelled ? "idle" : "error");
+      setOneStandardMessage(cancelled ? "已取消扫码，未提交任何数据" : message || "二维码识别失败");
+    } finally {
+      setOneStandardScanning(false);
+    }
+  };
+
+  const bindOneStandard = async () => {
+    const qrValue = oneStandardQrValue.trim();
+    if (!supplyPointId || !qrValue || oneStandardStatus === "running") return;
+    setOneStandardStatus("running");
+    setOneStandardMessage("正在提交一标三实二维码…");
+    try {
+      const response = await bindSupplyPointScanAddress(
+        supplyPointId,
+        qrValue,
+      );
+      const boundAddress = firstNonEmptyText(response.data?.xz);
+      const scanId = firstNonEmptyText(response.data?.supplypointScanId);
+      if (!boundAddress && !scanId) {
+        throw new Error("绑定响应缺少扫码地址和绑定记录 ID");
+      }
+      setOneStandardAddress(boundAddress);
+      setOneStandardStatus("success");
+      setOneStandardMessage(
+        boundAddress
+          ? `一标三实绑定成功：${boundAddress}`
+          : "一标三实绑定成功",
+      );
+      setOneStandardOpen(false);
+      setOneStandardQrValue("");
+    } catch (error) {
+      setOneStandardStatus("error");
+      setOneStandardMessage(
+        error instanceof Error ? error.message : "一标三实绑定失败",
       );
     }
   };
@@ -540,7 +766,7 @@ export function AppDrawer({
                     {quickPrefillStatus === "running"
                       ? "正在执行，请保持当前工单详情打开"
                       : canOpenResidentSecurityPrefill
-                        ? "点击后立即读取上一年选项并预存当前工单"
+                        ? "点击后读取上一年选项及批准文本并预存"
                       : "仅支持待处理的居民安检单"}
                   </small>
                 </span>
@@ -577,12 +803,61 @@ export function AppDrawer({
                   ) : (
                     <p>{quickPrefillPreview.hazardMessage}</p>
                   )}
+                  {quickPrefillPreview.gasMeterPhotoStatus === "uploaded" ? (
+                    <p>
+                      本次燃气表照片已上传
+                      {quickPrefillPreview.gasMeterPhotoCount > 1
+                        ? ` ${quickPrefillPreview.gasMeterPhotoCount} 张`
+                        : ""}
+                      ，并按安检规则添加当前时间水印。
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+              <button
+                type="button"
+                className="one-standard-quick-action"
+                disabled={!supplyPointId || oneStandardStatus === "running"}
+                onClick={() => void openOneStandard()}
+              >
+                <span className="detail-quick-action-icon">
+                  <Icon name="scan" size={18} />
+                </span>
+                <span>
+                  <b>一标三实</b>
+                  <small>
+                    {oneStandardStatus === "running"
+                      ? "正在查询或提交，请保持工单详情打开"
+                      : supplyPointId
+                        ? oneStandardAddress
+                          ? "已绑定，可重新扫描二维码"
+                          : "扫描二维码并绑定当前供气点"
+                        : "当前详情缺少供气点 ID"}
+                  </small>
+                </span>
+                <Icon
+                  name={oneStandardStatus === "running" ? "refresh" : "chevron"}
+                  size={16}
+                />
+              </button>
+              {oneStandardMessage ? (
+                <p
+                  className={`detail-quick-action-message status-${oneStandardStatus}`}
+                >
+                  {oneStandardMessage}
+                </p>
+              ) : null}
+              {oneStandardAddress ? (
+                <div className="detail-one-standard-result">
+                  <span>当前扫码地址</span>
+                  <b>{oneStandardAddress}</b>
                 </div>
               ) : null}
             </section>
             {detailError ? <p className="detail-error">{detailError}</p> : null}
             <DetailSection title="工单信息">
               <DetailRow
+                copyable
                 label="工单号"
                 value={header.woNumber ?? order.woNumber}
               />
@@ -611,6 +886,7 @@ export function AppDrawer({
                 value={header.userName ?? userInfo.userName ?? order.resident}
               />
               <DetailRow
+                copyable
                 label="用户编号"
                 value={header.userNumber ?? userInfo.userNumber}
               />
@@ -619,6 +895,7 @@ export function AppDrawer({
                 value={header.contactPerson ?? userInfo.contactPerson}
               />
               <DetailRow
+                copyable
                 label="联系电话"
                 value={header.contactPhone ?? userInfo.contactPhone}
               />
@@ -1085,7 +1362,7 @@ export function AppDrawer({
                 <p>
                   刚刚未查询到“到访不遇”流转日志。确认后才会创建；提交前会再次校验，避免重复写入。
                 </p>
-                <div>
+                <div className="retry-confirm-actions">
                   <button
                     type="button"
                     disabled={retryingLog}
@@ -1112,10 +1389,11 @@ export function AppDrawer({
               onClick={(event) => {
                 event.stopPropagation();
                 setQuickPrefillConfirmOpen(false);
+                setQuickPrefillGasMeterPhoto(null);
               }}
             >
               <section
-                className="retry-confirm-dialog"
+                className="retry-confirm-dialog quick-prefill-confirm-dialog"
                 role="dialog"
                 aria-modal="true"
                 aria-label="确认安检预填"
@@ -1124,12 +1402,25 @@ export function AppDrawer({
                 <h3>确认预填当前工单？</h3>
                 <p>
                   将读取该住户上一年度已完成的居民安检单，并通过 editAct
-                  预存选择结果到当前工单“{order.woNumber || order.woHeaderId}”。图片、文本和日期不会复制。
+                  预存已批准的选项及人口、品牌/型号、使用年限等文本到当前工单“{order.woNumber || order.woHeaderId}”。历史图片不会复制；如选择当前燃气表照片，则添加本次安检时间水印后上传。
                 </p>
-                <div>
+                <div className="quick-prefill-photo-field">
+                  <span>当前燃气表照片（可选）</span>
+                  <UploadFilePicker
+                    file={quickPrefillGasMeterPhoto}
+                    inputKey={`${order.woHeaderId}-gas-meter`}
+                    label="燃气表照片"
+                    placeholder="可选择当前燃气表照片"
+                    onPick={setQuickPrefillGasMeterPhoto}
+                  />
+                </div>
+                <div className="retry-confirm-actions">
                   <button
                     type="button"
-                    onClick={() => setQuickPrefillConfirmOpen(false)}
+                    onClick={() => {
+                      setQuickPrefillConfirmOpen(false);
+                      setQuickPrefillGasMeterPhoto(null);
+                    }}
                   >
                     取消
                   </button>
@@ -1137,7 +1428,100 @@ export function AppDrawer({
                     type="button"
                     onClick={() => void runResidentSecurityPrefill()}
                   >
-                    确认预填
+                    {quickPrefillGasMeterPhoto ? "上传照片并预填" : "直接预填"}
+                  </button>
+                </div>
+              </section>
+            </div>,
+            document.body,
+          )}
+        {oneStandardOpen && order &&
+          createPortal(
+            <div
+              className="retry-confirm-backdrop"
+              onClick={(event) => {
+                event.stopPropagation();
+                if (oneStandardStatus !== "running") {
+                  setOneStandardOpen(false);
+                  setOneStandardQrValue("");
+                }
+              }}
+            >
+              <section
+                className="retry-confirm-dialog one-standard-dialog"
+                role="dialog"
+                aria-modal="true"
+                aria-label="一标三实二维码绑定"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <h3>绑定一标三实二维码</h3>
+                <p>
+                  当前供气点：{supplyPointId}。确认后将按钉钉原页面接口绑定；如果已经绑定，本次操作会重新扫描。
+                </p>
+                {oneStandardAddress ? (
+                  <div className="one-standard-current-address">
+                    <span>当前绑定地址</span>
+                    <b>{oneStandardAddress}</b>
+                  </div>
+                ) : null}
+                <button
+                  type="button"
+                  className="one-standard-image-picker"
+                  disabled={oneStandardScanning || oneStandardStatus === "running"}
+                  onClick={() => void scanOneStandardQrCode()}
+                >
+                  <Icon name="scan" size={18} />
+                  <span>
+                    <b>{oneStandardScanning ? "正在扫描…" : "打开摄像头扫描二维码"}</b>
+                    <small>仅识别二维码；扫码后仍需确认才会绑定</small>
+                  </span>
+                </button>
+                <label className="one-standard-qr-input">
+                  <span>二维码内容</span>
+                  <textarea
+                    value={oneStandardQrValue}
+                    placeholder="摄像头扫码后自动填写，也可以直接粘贴二维码内容"
+                    onChange={(event) => {
+                      setOneStandardQrValue(event.target.value);
+                      if (oneStandardStatus === "error") {
+                        setOneStandardStatus("idle");
+                      }
+                    }}
+                  />
+                </label>
+                {oneStandardMessage ? (
+                  <p
+                    className={`one-standard-dialog-message status-${oneStandardStatus}`}
+                    role="status"
+                  >
+                    {oneStandardMessage}
+                  </p>
+                ) : null}
+                <div className="retry-confirm-actions">
+                  <button
+                    type="button"
+                    disabled={oneStandardStatus === "running"}
+                    onClick={() => {
+                      setOneStandardOpen(false);
+                      setOneStandardQrValue("");
+                    }}
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="button"
+                    disabled={
+                      !oneStandardQrValue.trim() ||
+                      oneStandardScanning ||
+                      oneStandardStatus === "running"
+                    }
+                    onClick={() => void bindOneStandard()}
+                  >
+                    {oneStandardStatus === "running"
+                      ? "正在提交…"
+                      : oneStandardAddress
+                        ? "确认重新绑定"
+                        : "确认绑定"}
                   </button>
                 </div>
               </section>

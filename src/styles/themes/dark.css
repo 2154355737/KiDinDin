@@ -197,7 +197,7 @@ html[data-theme="dark"] #root {
 
 .theme-dark .secondary-button,
 .theme-dark .export-token-button,
-.theme-dark .retry-confirm-dialog button,
+.theme-dark .retry-confirm-dialog > .retry-confirm-actions button,
 .theme-dark .theme-select button,
 .theme-dark .photo-source-tabs button,
 .theme-dark .export-verification-tabs button,
@@ -504,7 +504,7 @@ html[data-theme="dark"] #root {
   color: var(--dark-text-muted);
 }
 
-.theme-dark .retry-confirm-dialog button:last-child {
+.theme-dark .retry-confirm-dialog > .retry-confirm-actions button:last-child {
   background: var(--dark-accent) !important;
   color: #fff !important;
 }

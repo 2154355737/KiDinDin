@@ -94,7 +94,7 @@ export function MorePage({
         </button>
         <button type="button" className="more-feature-card" onClick={onOpenResidentSecurityPrefill}>
           <span className="more-feature-icon"><Icon name="audit" size={21} /></span>
-          <span className="more-feature-copy"><b>安检预填</b><small>复用上一年居民安检选择结果</small></span>
+          <span className="more-feature-copy"><b>安检预填</b><small>复用上一年居民安检选项及批准文本</small></span>
           <Icon name="chevron" size={18} />
         </button>
         <button type="button" className="more-feature-card" onClick={onOpenVacantRoom}>

@@ -124,7 +124,7 @@ export function ResidentSecurityPrefillPage({
       setState({
         message: ready
           ? `来源 ${preview.historyYear} 年 ${preview.historyWoNumber}，将预填 ${preview.prefillCount} 项`
-          : `${preview.historyYear} 年历史选项在今年表单中已经存在`,
+          : `${preview.historyYear} 年历史内容在今年表单中已经存在`,
         preview,
         status: ready ? "ready" : "skipped",
       });
@@ -155,7 +155,7 @@ export function ResidentSecurityPrefillPage({
       const saved = preview.prefillCount > 0;
       setState({
         message: saved
-          ? `已从 ${preview.historyYear} 年工单预存 ${preview.prefillCount} 项选择结果`
+          ? `已从 ${preview.historyYear} 年工单预存 ${preview.prefillCount} 项内容`
           : "重新校验后数据已变化，当前无需重复预存",
         preview,
         status: saved ? "saved" : "skipped",
@@ -260,7 +260,7 @@ export function ResidentSecurityPrefillPage({
                 {selected && preview ? (
                   <>
                     <div className="vacant-fill-preview">
-                      <span><b>{preview.prefillCount}</b> 项历史选项</span>
+                      <span><b>{preview.prefillCount}</b> 项历史内容</span>
                       <span><b>{preview.preservedChoiceCount}</b> 项今年保留</span>
                       <span><b>{preview.excludedFieldCount}</b> 项安全排除</span>
                     </div>
@@ -303,7 +303,7 @@ export function ResidentSecurityPrefillPage({
       <details className="vacant-fill-boundary">
         <summary>历史范围与写入边界</summary>
         <p>只允许逐单操作；仅接受当前工单上一年度、状态 50、名称为“居民安检单”的同户同供气点工单。</p>
-        <p>只复制选择结果；文本、数字、日期、表具、安全卡、照片及 PZ 字段全部排除。</p>
+        <p>复制已批准的选择项及人口、设备品牌/型号、使用年限和热水器升数；其他文本、日期、表具、安全卡、照片及 PZ 字段继续排除。</p>
         <p>隐患摘要通过 previewVo 只读接口获取；确认预存仍只调用 editAct，不提交或关闭工单。</p>
       </details>
 
