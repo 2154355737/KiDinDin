@@ -38,6 +38,17 @@
   color: #73839a;
 }
 
+.storefront-prefill-summary {
+  margin: 7px 0 0;
+  padding: 9px 11px;
+  border: 1px solid var(--accent-border);
+  border-radius: 10px;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
 .prepare-tabs {
   display: flex;
   align-items: stretch;
@@ -133,9 +144,96 @@
   font-size: 10px;
 }
 
+.section-heading>b.is-prefilled {
+  color: #13724d;
+  background: #e8f8ef;
+}
+
+.theme-dark .storefront-prefill-summary {
+  border-color: var(--dark-border-strong);
+  color: var(--dark-text);
+  background: var(--dark-surface);
+}
+
+.theme-dark .section-heading>b.is-prefilled {
+  color: #8de0b4;
+  background: #173527;
+}
+
 .workflow-file-picker {
   display: grid;
   gap: 8px;
+}
+
+.native-camera-picker {
+  position: relative;
+  min-width: 0;
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) 20px;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  overflow: hidden;
+  border: 1px solid var(--accent-border);
+  border-radius: 12px;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  cursor: pointer;
+}
+
+.native-camera-picker > .icon:first-child {
+  width: 36px;
+  height: 36px;
+  padding: 8px;
+  border-radius: 10px;
+  color: #fff;
+  background: var(--accent);
+}
+
+.native-camera-picker > span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.native-camera-picker b,
+.native-camera-picker small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.native-camera-picker b {
+  font-size: 12px;
+}
+
+.native-camera-picker small {
+  color: #718198;
+  font-size: 9px;
+}
+
+.native-camera-picker > .icon:nth-of-type(2) {
+  justify-self: end;
+}
+
+.native-camera-picker input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.theme-dark .native-camera-picker {
+  border-color: var(--dark-border-strong);
+  color: var(--dark-text);
+  background: var(--dark-surface);
+}
+
+.theme-dark .native-camera-picker small {
+  color: var(--dark-text-secondary);
 }
 
 .upload-photo-preview {
@@ -297,6 +395,18 @@
   border-top: 1px solid rgb(255 255 255 / 10%);
 }
 
+.image-preview-action-error {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid rgb(248 113 113 / 35%);
+  border-radius: 9px;
+  color: #fecaca;
+  background: rgb(127 29 29 / 38%);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
 .image-preview-dialog footer button {
   min-height: 42px;
   border: 0;
@@ -310,6 +420,12 @@
 .image-preview-dialog footer button:last-child {
   background: var(--accent);
   color: #fff;
+}
+
+.image-preview-dialog footer button:disabled,
+.image-preview-dialog header button:disabled {
+  cursor: wait;
+  opacity: .58;
 }
 
 .theme-dark .upload-photo-preview {

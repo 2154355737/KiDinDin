@@ -148,6 +148,7 @@ export type ResidentSecurityPrefillPreview = {
   excludedInputCount: number;
   excludedPhotoCount: number;
   historyCompletedAt: string;
+  historyStatus: "available" | "missing";
   historyWoHeaderId: string;
   historyWoNumber: string;
   historyYear: number;
@@ -163,6 +164,19 @@ export type ResidentSecurityPrefillPreview = {
   woHeaderId: string;
   woYear: number;
 };
+
+export class ResidentSecurityHistoryMissingError extends Error {
+  constructor(public readonly historyYear: number) {
+    super(`${historyYear} 年未找到同户已完成的居民安检单，不会回退到更早年份`);
+    this.name = "ResidentSecurityHistoryMissingError";
+  }
+}
+
+export function isResidentSecurityHistoryMissingError(
+  error: unknown,
+): error is ResidentSecurityHistoryMissingError {
+  return error instanceof ResidentSecurityHistoryMissingError;
+}
 
 export type ResidentSecurityHazard = {
   actCode: string;
@@ -878,6 +892,7 @@ export function prepareResidentSecurityPrefillPayload(
       excludedPhotoCount,
       historyCompletedAt:
         text(history.header.actualEndDate) || text(historyCandidate.actualEndDate),
+      historyStatus: "available",
       historyWoHeaderId,
       historyWoNumber:
         text(history.header.woNumber) || text(historyCandidate.woNumber),
@@ -891,6 +906,96 @@ export function prepareResidentSecurityPrefillPayload(
       lineCount: mergedLines.length,
       prefillCount,
       preservedChoiceCount,
+      woHeaderId,
+      woYear,
+    },
+  };
+}
+
+function prepareResidentSecurityPhotoOnlyPayload(
+  order: WorkOrder,
+  currentNail: WorkOrderNailInfo,
+  currentCompleteDetail: WorkOrderDetail,
+): PreparedPrefill {
+  const current = nailParts(currentNail, currentCompleteDetail, "当前工单");
+  assertResidentSecurityHeader(current.header, "20");
+  const actSetId = assertResidentSecurityActSet(current.actSet);
+  const woHeaderId = text(current.header.woHeaderId);
+  const woYear = integer(current.header.woYear);
+  if (!woHeaderId || woHeaderId !== order.woHeaderId) {
+    throw new Error("表单返回的工单 ID 与目标工单不一致");
+  }
+  if (woYear < 2021 || woYear > 2100) {
+    throw new Error("目标工单年份无效");
+  }
+
+  const templateCodes = new Set(
+    VACANT_ROOM_FILL_TEMPLATE.map((line) => line.attrCode),
+  );
+  if (templateCodes.size !== VACANT_ROOM_FILL_TEMPLATE.length) {
+    throw new Error("居民安检请求模板包含重复字段");
+  }
+  const currentByCode = new Map<string, WorkOrderLine>();
+  for (const line of current.lines) {
+    const code = text(line.attrCode);
+    if (code) currentByCode.set(code, line);
+  }
+
+  const lines: PreparedLine[] = VACANT_ROOM_FILL_TEMPLATE.map((templateLine) => {
+    const code = templateLine.attrCode;
+    const currentLine = currentByCode.get(code);
+    const line: PreparedLine = {
+      attrCode: code,
+      attrVal: clone(currentLine?.attrVal ?? ""),
+      attrDetail: mergeCurrentDetail(
+        blankTemplateDetail(templateLine),
+        currentLine?.attrDetail,
+      ),
+    };
+    if (!LINES_WITHOUT_HEADER_ID.has(code)) line.woHeaderId = woHeaderId;
+    return line;
+  });
+
+  for (const currentLine of current.lines) {
+    const code = text(currentLine.attrCode);
+    if (!code || templateCodes.has(code) || !lineHasValue(currentLine)) continue;
+    const line: PreparedLine = {
+      attrCode: code,
+      attrVal: clone(currentLine.attrVal ?? ""),
+      attrDetail:
+        currentLine.attrDetail === null
+          ? null
+          : clone(record(currentLine.attrDetail)),
+    };
+    if (!LINES_WITHOUT_HEADER_ID.has(code)) line.woHeaderId = woHeaderId;
+    lines.push(line);
+  }
+
+  return {
+    payload: {
+      tcisWoHeaderDto: { woHeaderId, woYear },
+      tcisWoLineDtoList: lines,
+    },
+    preview: {
+      actSetId,
+      existingFieldCount: current.lines.filter(lineHasValue).length,
+      excludedFieldCount: 0,
+      excludedInputCount: 0,
+      excludedPhotoCount: 0,
+      historyCompletedAt: "",
+      historyStatus: "missing",
+      historyWoHeaderId: "",
+      historyWoNumber: "",
+      historyYear: woYear - 1,
+      hazardMessage: "尚未读取隐患摘要",
+      hazardSource: "unavailable",
+      hazardStatus: "unknown",
+      hazards: [],
+      gasMeterPhotoCount: 0,
+      gasMeterPhotoStatus: "not-requested",
+      lineCount: lines.length,
+      prefillCount: 0,
+      preservedChoiceCount: 0,
       woHeaderId,
       woYear,
     },
@@ -951,9 +1056,7 @@ async function prepareResidentSecurityPrefill(
     }
   }
   if (!candidates.length) {
-    throw new Error(
-      `${historyYear} 年未找到同户已完成的居民安检单，不会回退到更早年份`,
-    );
+    throw new ResidentSecurityHistoryMissingError(historyYear);
   }
 
   const failures: string[] = [];
@@ -1031,33 +1134,32 @@ export async function inspectResidentSecurityPrefill(order: WorkOrder) {
   );
 }
 
-export async function saveResidentSecurityPrefill(
-  order: WorkOrder,
-  expectedHistoryWoHeaderId: string,
-  gasMeterPhoto?: File,
+async function attachGasMeterPhoto(
+  prepared: PreparedPrefill,
+  gasMeterPhoto: File,
 ) {
-  const prepared = await prepareResidentSecurityPrefill(
-    order,
-    expectedHistoryWoHeaderId,
+  const gasMeterPhotoLine = prepared.payload.tcisWoLineDtoList.find(
+    (line) => line.attrCode === GAS_METER_PHOTO_CODE,
   );
-  if (gasMeterPhoto) {
-    const gasMeterPhotoLine = prepared.payload.tcisWoLineDtoList.find(
-      (line) => line.attrCode === GAS_METER_PHOTO_CODE,
-    );
-    if (!gasMeterPhotoLine) {
-      throw new Error("今年安检表单缺少燃气表图片字段 RAB000003");
-    }
-    const uploaded = await uploadWorkOrderFiles([gasMeterPhoto], "", {
-      securityWatermark: true,
-    });
-    gasMeterPhotoLine.attrVal = uploaded.data.bizId;
-    prepared.preview.gasMeterPhotoCount = Math.max(
-      uploaded.data.sysAttachList?.length ?? 0,
-      1,
-    );
-    prepared.preview.gasMeterPhotoStatus = "uploaded";
-    prepared.preview.prefillCount += 1;
+  if (!gasMeterPhotoLine) {
+    throw new Error("今年安检表单缺少燃气表图片字段 RAB000003");
   }
+  const uploaded = await uploadWorkOrderFiles([gasMeterPhoto], "", {
+    securityWatermark: true,
+  });
+  gasMeterPhotoLine.attrVal = uploaded.data.bizId;
+  prepared.preview.gasMeterPhotoCount = Math.max(
+    uploaded.data.sysAttachList?.length ?? 0,
+    1,
+  );
+  prepared.preview.gasMeterPhotoStatus = "uploaded";
+  prepared.preview.prefillCount += 1;
+}
+
+async function savePreparedResidentSecurityPrefill(
+  order: WorkOrder,
+  prepared: PreparedPrefill,
+) {
   if (prepared.preview.prefillCount === 0) {
     return withSecurityCheckPreview(
       prepared.preview,
@@ -1077,4 +1179,39 @@ export async function saveResidentSecurityPrefill(
     prepared.payload.tcisWoHeaderDto.woYear,
     "current",
   );
+}
+
+export async function saveResidentSecurityPrefill(
+  order: WorkOrder,
+  expectedHistoryWoHeaderId: string,
+  gasMeterPhoto?: File,
+) {
+  const prepared = await prepareResidentSecurityPrefill(
+    order,
+    expectedHistoryWoHeaderId,
+  );
+  if (gasMeterPhoto) {
+    await attachGasMeterPhoto(prepared, gasMeterPhoto);
+  }
+  return savePreparedResidentSecurityPrefill(order, prepared);
+}
+
+export async function saveResidentSecurityGasMeterPhotoOnly(
+  order: WorkOrder,
+  gasMeterPhoto: File,
+) {
+  if (!isResidentSecurityPrefillTarget(order)) {
+    throw new Error("仅允许预填待处理的居民安检工单");
+  }
+  const [currentResponse, currentDetailResponse] = await Promise.all([
+    fetchWorkOrderNailInfo(order.woHeaderId),
+    postWorkOrderForEdit(order.woHeaderId),
+  ]);
+  const prepared = prepareResidentSecurityPhotoOnlyPayload(
+    order,
+    currentResponse.data,
+    currentDetailResponse.data,
+  );
+  await attachGasMeterPhoto(prepared, gasMeterPhoto);
+  return savePreparedResidentSecurityPrefill(order, prepared);
 }

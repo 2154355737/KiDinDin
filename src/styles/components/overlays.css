@@ -842,6 +842,10 @@
   margin-top: 9px;
 }
 
+.detail-quick-actions > .storefront-prefill-quick-action {
+  margin-top: 9px;
+}
+
 .detail-quick-action-message {
   margin: 8px 1px 0;
   color: #718096;
@@ -855,6 +859,11 @@
 
 .detail-quick-action-message.status-error {
   color: #c34848;
+}
+
+.detail-quick-action-message.status-saving,
+.detail-quick-action-message.status-loading {
+  color: var(--accent-strong);
 }
 
 .detail-quick-prefill-result {
@@ -1129,6 +1138,14 @@
   overflow-y: auto;
 }
 
+.storefront-prefill-dialog {
+  width: min(calc(100vw - 24px),380px);
+  min-width: 0;
+  max-height: calc(100dvh - 24px);
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
 .quick-prefill-confirm-dialog p {
   overflow-wrap: anywhere;
 }
@@ -1310,7 +1327,8 @@
   opacity: .62;
 }
 
-.quick-prefill-photo-field {
+.quick-prefill-photo-field,
+.storefront-prefill-photo-field {
   min-width: 0;
   display: grid;
   gap: 8px;
@@ -1323,24 +1341,77 @@
 
 .quick-prefill-photo-field .workflow-file-picker,
 .quick-prefill-photo-field .file-picker,
-.quick-prefill-photo-field .upload-photo-preview {
+.quick-prefill-photo-field .upload-photo-preview,
+.storefront-prefill-photo-field .workflow-file-picker,
+.storefront-prefill-photo-field .file-picker,
+.storefront-prefill-photo-field .upload-photo-preview {
   min-width: 0;
 }
 
-.quick-prefill-photo-field .file-picker {
+.quick-prefill-photo-field .file-picker,
+.storefront-prefill-photo-field .file-picker {
   display: grid;
   grid-template-columns: minmax(0,1fr) 94px;
 }
 
-.quick-prefill-photo-field .file-picker input {
+.quick-prefill-photo-field .file-picker input,
+.storefront-prefill-photo-field .file-picker input {
   width: 94px;
   min-width: 0;
   max-width: 94px;
 }
 
-.quick-prefill-photo-field .upload-photo-preview {
+.quick-prefill-photo-field .upload-photo-preview,
+.storefront-prefill-photo-field .upload-photo-preview {
   grid-template-columns: 52px minmax(0,1fr) 20px;
   gap: 8px;
+}
+
+.storefront-prefill-saved-meta,
+.storefront-prefill-dialog-error {
+  margin: 9px 1px 0 !important;
+  color: #6c7d94 !important;
+  font-size: 10px !important;
+  line-height: 1.45 !important;
+  overflow-wrap: anywhere;
+}
+
+.storefront-prefill-dialog-error {
+  color: #c2414b !important;
+}
+
+.storefront-prefill-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  gap: 9px;
+  margin-top: 15px;
+}
+
+.storefront-prefill-actions button {
+  min-width: 0;
+  min-height: 40px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 10px;
+  color: #586b85;
+  background: #edf1f7;
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1.25;
+}
+
+.storefront-prefill-actions button:last-child {
+  color: #fff;
+  background: var(--accent);
+}
+
+.storefront-prefill-actions button.confirm-remove {
+  color: #fff;
+  background: #c2414b;
+}
+
+.storefront-prefill-actions button:disabled {
+  opacity: .58;
 }
 
 @media (max-width: 360px) {
@@ -1353,24 +1424,42 @@
     padding: 14px;
   }
 
-  .quick-prefill-photo-field {
+  .quick-prefill-photo-field,
+  .storefront-prefill-photo-field {
     padding: 9px;
   }
 }
 
-.quick-prefill-photo-field > span {
+.quick-prefill-photo-field > span,
+.storefront-prefill-photo-field > span {
   color: #334b67;
   font-size: 12px;
   font-weight: 750;
 }
 
-.theme-dark .quick-prefill-photo-field {
+.theme-dark .quick-prefill-photo-field,
+.theme-dark .storefront-prefill-photo-field {
   border-color: #35445b;
   background: #152033;
 }
 
-.theme-dark .quick-prefill-photo-field > span {
+.theme-dark .quick-prefill-photo-field > span,
+.theme-dark .storefront-prefill-photo-field > span {
   color: #edf4ff;
+}
+
+.theme-dark .storefront-prefill-saved-meta {
+  color: var(--dark-text-secondary) !important;
+}
+
+.theme-dark .storefront-prefill-actions button {
+  color: var(--dark-text);
+  background: var(--dark-surface);
+}
+
+.theme-dark .storefront-prefill-actions button:last-child {
+  color: #fff;
+  background: var(--accent);
 }
 
 .theme-dark .record-verification-tip {

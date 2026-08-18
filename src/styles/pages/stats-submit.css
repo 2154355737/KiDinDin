@@ -85,9 +85,20 @@
   padding: 24px 0;
 }
 
-.submit-summary + .order-list {
+.submit-summary ~ .order-list {
   flex: 1;
   min-height: 0;
+}
+
+.batch-prefill-selection-message {
+  margin: 7px 0 0;
+  padding: 8px 10px;
+  border: 1px solid var(--accent-border);
+  border-radius: 9px;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  font-size: 10px;
+  line-height: 1.45;
 }
 
 .submit-fab {

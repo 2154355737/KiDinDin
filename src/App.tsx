@@ -74,6 +74,16 @@ import {
   type AppSettings,
 } from "./services/appSettings";
 import {
+  getStorefrontPhotoPrefillHeaderIds,
+  getStorefrontPhotoPrefills,
+  storefrontPhotoPrefillToFile,
+} from "./services/storefrontPrefillStore";
+import {
+  findDuplicateImage,
+  findFirstDuplicateImage,
+  type ImageDeduplicationEntry,
+} from "./services/imageDeduplication";
+import {
   getWorkOrderStatus,
   matchesWorkOrderStatus,
   workOrderStatusOptions,
@@ -298,6 +308,34 @@ type HistoryPhotoCacheEntry = {
 };
 
 type HistoryPhotoStatus = "idle" | "loading" | "ready" | "error";
+
+function batchImageEntries(
+  orders: readonly WorkOrder[],
+  storefrontFiles: Readonly<Record<string, File>>,
+  detailFiles: Readonly<Record<string, File>>,
+) {
+  return orders.flatMap((order) => {
+    const label = order.woNumber || order.id;
+    const entries: ImageDeduplicationEntry[] = [];
+    const storefrontFile = storefrontFiles[order.id];
+    const detailFile = detailFiles[order.id];
+    if (storefrontFile) {
+      entries.push({
+        file: storefrontFile,
+        key: `${order.id}:storefront`,
+        label: `${label} 的门头照片`,
+      });
+    }
+    if (detailFile) {
+      entries.push({
+        file: detailFile,
+        key: `${order.id}:detail`,
+        label: `${label} 的详细单近景照片`,
+      });
+    }
+    return entries;
+  });
+}
 
 type PendingLogRetry = {
   createdAt: string;
@@ -599,6 +637,7 @@ function isUnreachableExchangeLog(log: Record<string, unknown>) {
 
 export default function App() {
   const [auth, setAuth] = useState<AuthStatus | null>(null);
+  const [isMobileRuntime, setIsMobileRuntime] = useState(false);
   const [startupSplashVisible, setStartupSplashVisible] = useState(true);
   const [startupOrdersPreloadTimedOut, setStartupOrdersPreloadTimedOut] =
     useState(false);
@@ -662,7 +701,8 @@ export default function App() {
   const ordersRequestSequenceRef = useRef(0);
   const [historyFiles, setHistoryFiles] = useState<Record<string, File>>({});
   const [historyMode, setHistoryMode] = useState<"manual" | "auto">("manual");
-  const [submitMode, setSubmitMode] = useState<BatchSubmitMode>("manual");
+  const [submitMode, setSubmitMode] =
+    useState<BatchSubmitMode>("all-manual");
   const [submitIntervalMinSeconds, setSubmitIntervalMinSeconds] = useState(5);
   const [submitIntervalMaxSeconds, setSubmitIntervalMaxSeconds] = useState(10);
   const [historyPhotos, setHistoryPhotos] = useState<HistoryPhotoCandidate[]>(
@@ -686,6 +726,14 @@ export default function App() {
   const [detailCloseupFiles, setDetailCloseupFiles] = useState<
     Record<string, File>
   >({});
+  const [storefrontPrefilledOrderIds, setStorefrontPrefilledOrderIds] =
+    useState<string[]>([]);
+  const [storefrontPrefilledOrderHeaderIds, setStorefrontPrefilledOrderHeaderIds] =
+    useState<string[]>([]);
+  const [batchStorefrontMessage, setBatchStorefrontMessage] = useState("");
+  const [batchStorefrontLoading, setBatchStorefrontLoading] = useState(false);
+  const [batchDuplicateChecking, setBatchDuplicateChecking] = useState(false);
+  const batchAutoSelectKeyRef = useRef("");
   const [reason, setReason] = useState("到访不遇-有居住痕迹");
   const [remark, setRemark] = useState("");
   const [customOperatorName, setCustomOperatorName] = useState(
@@ -839,6 +887,23 @@ export default function App() {
       ),
     [detailCloseupFiles, historyFiles, selectedOrders],
   );
+  const allManualDoorfrontReadyByOrder = useMemo(
+    () =>
+      Object.fromEntries(
+        selectedOrders.map((order) => [order.id, Boolean(historyFiles[order.id])]),
+      ),
+    [historyFiles, selectedOrders],
+  );
+  const storefrontPrefilledByOrder = useMemo(
+    () =>
+      Object.fromEntries(
+        selectedOrders.map((order) => [
+          order.id,
+          storefrontPrefilledOrderIds.includes(order.id),
+        ]),
+      ),
+    [selectedOrders, storefrontPrefilledOrderIds],
+  );
   const pendingSelectedIds = useMemo(
     () => selectedOrders.map((order) => order.id),
     [selectedOrders],
@@ -933,6 +998,110 @@ export default function App() {
     () => filteredOrders.filter((order) => order.backendStatusCode === "20"),
     [filteredOrders],
   );
+  const storefrontPrefillLookupIds = useMemo(
+    () =>
+      Array.from(
+        new Set(orders.map((order) => order.woHeaderId).filter(Boolean)),
+      ),
+    [orders],
+  );
+  const storefrontPrefillLookupKey = storefrontPrefillLookupIds.join("\u0000");
+  const batchAutoSelectionKey = `${localAccountKey ?? "unidentified"}:${selectedDate}:${pendingSubmitOrders
+    .map((order) => order.woHeaderId)
+    .join("\u0000")}`;
+
+  useEffect(() => {
+    let active = true;
+    if (!localAccountKey || !storefrontPrefillLookupIds.length) {
+      setStorefrontPrefilledOrderHeaderIds([]);
+      return () => {
+        active = false;
+      };
+    }
+
+    void getStorefrontPhotoPrefillHeaderIds(
+      localAccountKey,
+      storefrontPrefillLookupIds,
+    )
+      .then((storedHeaderIds) => {
+        if (!active) return;
+        setStorefrontPrefilledOrderHeaderIds(storedHeaderIds);
+      })
+      .catch(() => {
+        if (active) setStorefrontPrefilledOrderHeaderIds([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [localAccountKey, storefrontPrefillLookupKey]);
+
+  useEffect(() => {
+    if (screen !== "select" || submitMode !== "all-manual") return;
+    if (batchAutoSelectKeyRef.current === batchAutoSelectionKey) return;
+
+    if (!localAccountKey) {
+      batchAutoSelectKeyRef.current = batchAutoSelectionKey;
+      setBatchStorefrontMessage(
+        "当前登录缺少本地账号标识，无法自动勾选预填工单；仍可手动勾选并上传照片",
+      );
+      return;
+    }
+
+    let active = true;
+    const visibleOrderIds = new Set(
+      pendingSubmitOrders.map((order) => order.id),
+    );
+    const visibleHeaderIds = new Set(
+      pendingSubmitOrders.map((order) => order.woHeaderId),
+    );
+    setBatchStorefrontLoading(true);
+    setBatchStorefrontMessage("正在读取本机已预填的到访不遇照片…");
+    void getStorefrontPhotoPrefillHeaderIds(
+      localAccountKey,
+      Array.from(visibleHeaderIds),
+    )
+      .then((storedHeaderIds) => {
+        if (!active) return;
+        batchAutoSelectKeyRef.current = batchAutoSelectionKey;
+        const storedHeaderIdSet = new Set(storedHeaderIds);
+        const autoSelectedOrderIds = pendingSubmitOrders
+          .filter((order) => storedHeaderIdSet.has(order.woHeaderId))
+          .map((order) => order.id);
+        setStorefrontPrefilledOrderHeaderIds((current) => [
+          ...current.filter((id) => !visibleHeaderIds.has(id)),
+          ...storedHeaderIds,
+        ]);
+        setSelected((current) => [
+          ...current.filter((id) => !visibleOrderIds.has(id)),
+          ...autoSelectedOrderIds,
+        ]);
+        setBatchStorefrontMessage(
+          autoSelectedOrderIds.length
+            ? `已自动勾选 ${autoSelectedOrderIds.length} 个预填过到访不遇门头照片的工单`
+            : "当前列表没有已预填到访不遇门头照片的工单，可按需手动勾选",
+        );
+      })
+      .catch((error) => {
+        if (!active) return;
+        batchAutoSelectKeyRef.current = batchAutoSelectionKey;
+        setBatchStorefrontMessage(
+          `读取预填状态失败：${messageOf(error)}；请按需手动勾选工单`,
+        );
+      })
+      .finally(() => {
+        if (active) setBatchStorefrontLoading(false);
+      });
+    return () => {
+      active = false;
+      setBatchStorefrontLoading(false);
+    };
+  }, [
+    batchAutoSelectionKey,
+    localAccountKey,
+    pendingSubmitOrders,
+    screen,
+    submitMode,
+  ]);
 
   const replacePendingLogRetries = useCallback(
     (next: Record<string, PendingLogRetry>) => {
@@ -1207,6 +1376,7 @@ export default function App() {
   useEffect(() => {
     let active = true;
     if (!isNativeRuntime()) {
+      setIsMobileRuntime(false);
       setAuth(unauthenticatedStatus());
       setLoginError(
         "当前是浏览器预览，原生登录不可用。请安装并打开 KiDinDin APK 后再粘贴凭据。",
@@ -1222,6 +1392,7 @@ export default function App() {
           fetchAuthHistory(),
         ]);
         if (!active) return;
+        setIsMobileRuntime(mobileRuntime);
         setAuthHistory(history);
 
         let next = current;
@@ -1940,6 +2111,99 @@ export default function App() {
     }
   };
 
+  const openBatchPreparation = async () => {
+    if (!selectedOrders.length || batchStorefrontLoading) return;
+    setBatchStorefrontLoading(true);
+    setActiveOrderId(selectedOrders[0].id);
+    setHistoryMode(submitMode === "historical" ? "auto" : "manual");
+    setBatchStorefrontMessage("");
+    try {
+      if (submitMode === "all-manual") {
+        if (!localAccountKey) {
+          setStorefrontPrefilledOrderIds([]);
+          setBatchStorefrontMessage(
+            "当前登录缺少本地账号标识，无法读取持久门头预填；请在本页手动选择门头照片",
+          );
+        } else {
+          const storedByHeaderId = await getStorefrontPhotoPrefills(
+            localAccountKey,
+            selectedOrders.map((order) => order.woHeaderId),
+          );
+          const existingPrefilledIds = new Set(storefrontPrefilledOrderIds);
+          const loadedFiles: Record<string, File> = {};
+          const loadedPrefilledIds: string[] = [];
+          for (const order of selectedOrders) {
+            const stored = storedByHeaderId[order.woHeaderId];
+            if (!stored) continue;
+            loadedFiles[order.id] = storefrontPhotoPrefillToFile(stored);
+            if (!historyFiles[order.id] || existingPrefilledIds.has(order.id)) {
+              loadedPrefilledIds.push(order.id);
+            }
+          }
+          setHistoryFiles((current) => ({ ...loadedFiles, ...current }));
+          setStorefrontPrefilledOrderIds(loadedPrefilledIds);
+          setBatchStorefrontMessage(
+            loadedPrefilledIds.length
+              ? `已从工单详情自动带入 ${loadedPrefilledIds.length} 张持久门头照片；这些照片在 App 重启后仍会保留`
+              : "所选工单尚未保存门头预填，请返回工单详情预填或在本页手动选择",
+          );
+        }
+      } else {
+        setStorefrontPrefilledOrderIds([]);
+      }
+      setScreen("prepare");
+      if (submitMode === "historical") {
+        void prefetchHistoricalPhotos(selectedOrders);
+      }
+    } catch (error) {
+      setStorefrontPrefilledOrderIds([]);
+      setBatchStorefrontMessage(
+        `读取持久门头预填失败：${messageOf(error)}；可在本页手动选择照片`,
+      );
+      setScreen("prepare");
+    } finally {
+      setBatchStorefrontLoading(false);
+    }
+  };
+
+  const openBatchConfirmation = async () => {
+    if (batchDuplicateChecking) return;
+    if (submitMode !== "all-manual") {
+      setLoadError("当前批量到访不遇仅开放手动上传模式");
+      return;
+    }
+    if (
+      !selectedOrders.length ||
+      selectedOrders.some(
+        (order) =>
+          !historyFiles[order.id] || !detailCloseupFiles[order.id],
+      )
+    ) {
+      setLoadError(
+        "请为每个工单分别准备门头照片和到访不遇详细单近景照片",
+      );
+      return;
+    }
+
+    setBatchDuplicateChecking(true);
+    try {
+      const duplicate = await findFirstDuplicateImage(
+        batchImageEntries(selectedOrders, historyFiles, detailCloseupFiles),
+      );
+      if (duplicate) {
+        setLoadError(
+          `检测到重复图片：“${duplicate.duplicate.label}”与“${duplicate.original.label}”内容完全相同，请更换其中一张；已预存照片不会被删除`,
+        );
+        return;
+      }
+      setScreen("confirm");
+    } catch (error) {
+      setLoadError(`图片去重检查失败：${messageOf(error)}`);
+    } finally {
+      setBatchDuplicateChecking(false);
+    }
+  };
+
   useEffect(() => {
     if (
       screen !== "prepare" ||
@@ -1960,6 +2224,7 @@ export default function App() {
 
   const runBatch = async () => {
     if (
+      submitMode !== "all-manual" ||
       !selectedOrders.length ||
       selectedOrders.some(
         (order) =>
@@ -2738,6 +3003,9 @@ export default function App() {
             query={query}
             date={selectedDate}
             localMetaById={localMetaById}
+            storefrontPrefilledOrderHeaderIds={
+              storefrontPrefilledOrderHeaderIds
+            }
             collapsedFloorGroupKeys={collapsedHomeFloorGroupKeys}
             activeFilterCount={activeFilterCount}
             prioritizePinned={sortField === "original"}
@@ -2791,8 +3059,15 @@ export default function App() {
             onOpenAllWorkOrders={() => setScreen("all-work-orders")}
             onOpenBatchSubmit={() => {
               setLocalDetailOrder(null);
+              setSubmitMode("all-manual");
+              setHistoryMode("manual");
+              setSelected([]);
               setHistoryFiles({});
               setDetailCloseupFiles({});
+              setStorefrontPrefilledOrderIds([]);
+              setBatchStorefrontMessage("");
+              setBatchDuplicateChecking(false);
+              batchAutoSelectKeyRef.current = "";
               setLibraryFile(null);
               setSelectedHistoryPhotoIds({});
               setScreen("mode");
@@ -2991,9 +3266,11 @@ export default function App() {
             onModeChange={(mode) => {
               setSubmitMode(mode);
               setHistoryMode(mode === "historical" ? "auto" : "manual");
-              if (mode === "all-manual") {
+              if (mode !== submitMode) {
                 setHistoryFiles({});
                 setDetailCloseupFiles({});
+                setStorefrontPrefilledOrderIds([]);
+                setBatchStorefrontMessage("");
                 setSelectedHistoryPhotoIds({});
               }
             }}
@@ -3013,7 +3290,11 @@ export default function App() {
               setScreen("orders");
               setMainTab("more");
             }}
-            onNext={() => setScreen("select")}
+            onNext={() => {
+              setSubmitMode("all-manual");
+              setHistoryMode("manual");
+              setScreen("select");
+            }}
             />
           )}
           {screen === "select" && (
@@ -3021,6 +3302,11 @@ export default function App() {
             orders={pendingSubmitOrders}
             selected={pendingSelectedIds}
             mode={submitMode}
+            preparing={batchStorefrontLoading}
+            prefillMessage={batchStorefrontMessage}
+            storefrontPrefilledOrderHeaderIds={
+              storefrontPrefilledOrderHeaderIds
+            }
             date={selectedDate}
             onDateChange={changeSelectedDate}
             onBack={() => setScreen("mode")}
@@ -3028,15 +3314,7 @@ export default function App() {
             onToggle={toggleOrder}
             onToggleAll={toggleAllPendingOrders}
             onDetail={openCurrentOrderDetail}
-            onPrepare={() => {
-              if (selectedOrders.length) {
-                setActiveOrderId(selectedOrders[0].id);
-                setHistoryMode(submitMode === "historical" ? "auto" : "manual");
-                setScreen("prepare");
-                if (submitMode === "historical")
-                  void prefetchHistoricalPhotos(selectedOrders);
-              }
-            }}
+            onPrepare={() => void openBatchPreparation()}
             />
           )}
           {screen === "prepare" && activeOrder && (
@@ -3056,12 +3334,35 @@ export default function App() {
             libraryFile={libraryFile}
             detailCloseupFile={activeDetailCloseupFile}
             allManualReadyByOrder={allManualReadyByOrder}
+            allManualDoorfrontReadyByOrder={allManualDoorfrontReadyByOrder}
+            storefrontPrefilledByOrder={storefrontPrefilledByOrder}
+            storefrontPrefillMessage={batchStorefrontMessage}
+            checkingDuplicates={batchDuplicateChecking}
             date={selectedDate}
             onDateChange={changeSelectedDate}
             onBack={() => setScreen("select")}
             onSelectOrder={setActiveOrderId}
-            onPickHistoryFile={(file) => {
+            onPickHistoryFile={async (file) => {
+              if (file && submitMode === "all-manual") {
+                const slotKey = `${activeOrder.id}:storefront`;
+                const duplicate = await findDuplicateImage(
+                  file,
+                  batchImageEntries(
+                    selectedOrders,
+                    historyFiles,
+                    detailCloseupFiles,
+                  ).filter((entry) => entry.key !== slotKey),
+                );
+                if (duplicate) {
+                  throw new Error(
+                    `这张图片与“${duplicate.label}”内容完全相同，请选择另一张照片`,
+                  );
+                }
+              }
               setHistoryMode("manual");
+              setStorefrontPrefilledOrderIds((current) =>
+                current.filter((id) => id !== activeOrder.id),
+              );
               setSelectedHistoryPhotoIds((current) => {
                 const next = { ...current };
                 delete next[activeOrder.id];
@@ -3088,7 +3389,23 @@ export default function App() {
               }));
             }}
             onPickLibraryFile={setLibraryFile}
-            onPickDetailCloseupFile={(file) => {
+            onPickDetailCloseupFile={async (file) => {
+              if (file && submitMode === "all-manual") {
+                const slotKey = `${activeOrder.id}:detail`;
+                const duplicate = await findDuplicateImage(
+                  file,
+                  batchImageEntries(
+                    selectedOrders,
+                    historyFiles,
+                    detailCloseupFiles,
+                  ).filter((entry) => entry.key !== slotKey),
+                );
+                if (duplicate) {
+                  throw new Error(
+                    `这张图片与“${duplicate.label}”内容完全相同，请选择另一张照片`,
+                  );
+                }
+              }
               setDetailCloseupFiles((current) => {
                 const next = { ...current };
                 if (file) next[activeOrder.id] = file;
@@ -3096,25 +3413,7 @@ export default function App() {
                 return next;
               });
             }}
-            onNext={() => {
-              if (
-                selectedOrders.some(
-                  (order) =>
-                    !historyFiles[order.id] ||
-                    (submitMode === "all-manual"
-                      ? !detailCloseupFiles[order.id]
-                      : !libraryFile),
-                )
-              ) {
-                setLoadError(
-                  submitMode === "all-manual"
-                    ? "请为每个工单分别选择门牌照片和到访不遇详细单近景照片"
-                    : "请为每个工单选择一张历史照片，并选择本机补图",
-                );
-                return;
-              }
-              setScreen("confirm");
-            }}
+            onNext={() => void openBatchConfirmation()}
             />
           )}
           {screen === "confirm" && (
@@ -3173,7 +3472,9 @@ export default function App() {
             appliedAccent={appliedAccent}
             appearanceSettings={appearanceSettings}
             auth={auth!}
+            mobileRuntime={isMobileRuntime}
             libraryPhotos={[]}
+            localAccountKey={localAccountKey}
             defaultOperatorName={customOperatorName}
             setDefaultOperatorName={setCustomOperatorName}
             setAppearanceSettings={setAppearanceSettings}
@@ -3183,6 +3484,28 @@ export default function App() {
             onRefreshSession={refreshSession}
             onSaveRefreshToken={saveRefreshToken}
             onExportSession={exportSession}
+            onStorefrontPrefillChange={(woHeaderId, saved) => {
+              setStorefrontPrefilledOrderHeaderIds((current) =>
+                saved
+                  ? Array.from(new Set([...current, woHeaderId]))
+                  : current.filter((id) => id !== woHeaderId),
+              );
+              if (saved && screen === "select") {
+                const order = pendingSubmitOrders.find(
+                  (item) => item.woHeaderId === woHeaderId,
+                );
+                if (order) {
+                  setSelected((current) =>
+                    current.includes(order.id)
+                      ? current
+                      : [...current, order.id],
+                  );
+                  setBatchStorefrontMessage(
+                    `已保存并自动勾选 ${order.woNumber || order.id}`,
+                  );
+                }
+              }
+            }}
             onClose={() => {
               setDrawer(null);
               setLocalDetailOrder(null);

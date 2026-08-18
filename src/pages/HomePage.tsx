@@ -92,6 +92,7 @@ export function HomePage({
   query,
   date,
   localMetaById,
+  storefrontPrefilledOrderHeaderIds = [],
   collapsedFloorGroupKeys = [],
   activeFilterCount = 0,
   prioritizePinned = true,
@@ -112,6 +113,7 @@ export function HomePage({
   query: string;
   date: string;
   localMetaById: Record<string, LocalWorkOrderMeta>;
+  storefrontPrefilledOrderHeaderIds?: readonly string[];
   collapsedFloorGroupKeys?: readonly string[];
   activeFilterCount?: number;
   prioritizePinned?: boolean;
@@ -238,6 +240,7 @@ export function HomePage({
         floorGroupingMessage={floorGroupingMessage}
         collapsedFloorGroupKeys={collapsedFloorGroupKeys}
         localMetaById={localMetaById}
+        storefrontPrefilledOrderHeaderIds={storefrontPrefilledOrderHeaderIds}
         onDetail={onDetail}
         onCollapsedFloorGroupKeysChange={onCollapsedFloorGroupKeysChange}
         onToggleFavorite={onToggleFavorite}

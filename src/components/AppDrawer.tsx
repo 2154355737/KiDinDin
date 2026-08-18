@@ -6,6 +6,7 @@ import {
 } from "../services/workOrderApi";
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   type Dispatch,
@@ -47,10 +48,19 @@ import { StatusBadge } from "./WorkOrderList";
 import { UploadFilePicker } from "./UploadFilePicker";
 import {
   inspectResidentSecurityPrefill,
+  isResidentSecurityHistoryMissingError,
   isResidentSecurityPrefillTarget,
+  saveResidentSecurityGasMeterPhotoOnly,
   saveResidentSecurityPrefill,
   type ResidentSecurityPrefillPreview,
 } from "../services/residentSecurityPrefillApi";
+import {
+  deleteStorefrontPhotoPrefill,
+  getStorefrontPhotoPrefill,
+  saveStorefrontPhotoPrefill,
+  storefrontPhotoPrefillToFile,
+  type StorefrontPhotoPrefill,
+} from "../services/storefrontPrefillStore";
 
 function asObject(value: unknown): Record<string, unknown> {
   return value && typeof value === "object"
@@ -292,7 +302,9 @@ export function AppDrawer({
   appliedAccent,
   appearanceSettings,
   auth,
+  mobileRuntime,
   libraryPhotos,
+  localAccountKey,
   defaultOperatorName,
   setDefaultOperatorName,
   setAppearanceSettings,
@@ -302,6 +314,7 @@ export function AppDrawer({
   onRefreshSession,
   onSaveRefreshToken,
   onExportSession,
+  onStorefrontPrefillChange,
   onClose,
   onLogout,
 }: {
@@ -315,7 +328,9 @@ export function AppDrawer({
   appliedAccent: AccentId;
   appearanceSettings: AppearanceSettings;
   auth: AuthStatus;
+  mobileRuntime: boolean;
   libraryPhotos: string[];
+  localAccountKey: string | null;
   defaultOperatorName: string;
   setDefaultOperatorName: (value: string) => void;
   setAppearanceSettings: Dispatch<SetStateAction<AppearanceSettings>>;
@@ -328,6 +343,7 @@ export function AppDrawer({
     verification: "biometric" | "password";
     password?: string;
   }) => Promise<string>;
+  onStorefrontPrefillChange: (woHeaderId: string, saved: boolean) => void;
   onClose: () => void;
   onLogout: () => void;
 }) {
@@ -353,6 +369,18 @@ export function AppDrawer({
   const [quickPrefillMessage, setQuickPrefillMessage] = useState("");
   const [quickPrefillPreview, setQuickPrefillPreview] =
     useState<ResidentSecurityPrefillPreview | null>(null);
+  const [storefrontPrefillOpen, setStorefrontPrefillOpen] = useState(false);
+  const [storefrontPrefill, setStorefrontPrefill] =
+    useState<StorefrontPhotoPrefill | null>(null);
+  const [storefrontPrefillFile, setStorefrontPrefillFile] =
+    useState<File | null>(null);
+  const [storefrontPrefillDraft, setStorefrontPrefillDraft] =
+    useState<File | null>(null);
+  const [storefrontPrefillMessage, setStorefrontPrefillMessage] = useState("");
+  const [storefrontPrefillStatus, setStorefrontPrefillStatus] = useState<
+    "idle" | "loading" | "saving" | "success" | "error"
+  >("idle");
+  const [storefrontRemoveConfirm, setStorefrontRemoveConfirm] = useState(false);
   const [oneStandardOpen, setOneStandardOpen] = useState(false);
   const [oneStandardQrValue, setOneStandardQrValue] = useState("");
   const [oneStandardAddress, setOneStandardAddress] = useState("");
@@ -383,6 +411,17 @@ export function AppDrawer({
   const canOpenResidentSecurityPrefill = Boolean(
     order && isResidentSecurityPrefillTarget(order),
   );
+  const canStorefrontPrefill = Boolean(
+    order && localAccountKey,
+  );
+  const storefrontSavedAt = useMemo(() => {
+    if (!storefrontPrefill) return "";
+    return new Intl.DateTimeFormat("zh-CN", {
+      dateStyle: "short",
+      timeStyle: "short",
+      hour12: false,
+    }).format(new Date(storefrontPrefill.savedAt));
+  }, [storefrontPrefill]);
   const supplyPointId = firstNonEmptyText(
     header.supplyPointId,
     header.supplypointId,
@@ -400,6 +439,9 @@ export function AppDrawer({
     setQuickPrefillGasMeterPhoto(null);
     setQuickPrefillMessage("");
     setQuickPrefillPreview(null);
+    setStorefrontPrefillOpen(false);
+    setStorefrontPrefillDraft(null);
+    setStorefrontRemoveConfirm(false);
     setOneStandardOpen(false);
     setOneStandardQrValue("");
     setOneStandardAddress("");
@@ -407,6 +449,137 @@ export function AppDrawer({
     setOneStandardStatus("idle");
     setOneStandardScanning(false);
   }, [order?.woHeaderId]);
+
+  useEffect(() => {
+    let active = true;
+    setStorefrontPrefill(null);
+    setStorefrontPrefillFile(null);
+    setStorefrontPrefillMessage("");
+    setStorefrontPrefillStatus("idle");
+    if (!order?.woHeaderId) return () => undefined;
+    if (!localAccountKey) {
+      setStorefrontPrefillMessage("当前登录缺少本地账号标识，无法持久保存门头照片");
+      setStorefrontPrefillStatus("error");
+      return () => undefined;
+    }
+
+    setStorefrontPrefillStatus("loading");
+    void getStorefrontPhotoPrefill(localAccountKey, order.woHeaderId)
+      .then((prefill) => {
+        if (!active) return;
+        setStorefrontPrefill(prefill);
+        setStorefrontPrefillFile(
+          prefill ? storefrontPhotoPrefillToFile(prefill) : null,
+        );
+        setStorefrontPrefillStatus(prefill ? "success" : "idle");
+      })
+      .catch((error) => {
+        if (!active) return;
+        setStorefrontPrefillMessage(
+          error instanceof Error ? error.message : "读取门头预填照片失败",
+        );
+        setStorefrontPrefillStatus("error");
+      });
+    return () => {
+      active = false;
+    };
+  }, [localAccountKey, order?.woHeaderId]);
+
+  const closeStorefrontPrefill = () => {
+    if (
+      storefrontPrefillStatus === "loading" ||
+      storefrontPrefillStatus === "saving"
+    )
+      return;
+    setStorefrontPrefillOpen(false);
+    setStorefrontPrefillDraft(storefrontPrefillFile);
+    setStorefrontRemoveConfirm(false);
+  };
+
+  const openStorefrontPrefill = () => {
+    if (!canStorefrontPrefill) return;
+    setStorefrontPrefillDraft(storefrontPrefillFile);
+    setStorefrontRemoveConfirm(false);
+    setStorefrontPrefillOpen(true);
+  };
+
+  const persistStorefrontPrefill = async (
+    selectedFile: File | null = storefrontPrefillDraft,
+  ) => {
+    if (!order || !localAccountKey || !selectedFile) return;
+    setStorefrontPrefillStatus("saving");
+    setStorefrontPrefillMessage("正在把门头照片持久保存到 App…");
+    try {
+      const prefill = await saveStorefrontPhotoPrefill(
+        localAccountKey,
+        order,
+        selectedFile,
+      );
+      const file = storefrontPhotoPrefillToFile(prefill);
+      setStorefrontPrefill(prefill);
+      setStorefrontPrefillFile(file);
+      setStorefrontPrefillDraft(file);
+      setStorefrontPrefillStatus("success");
+      setStorefrontPrefillMessage(
+        "已持久保存到 App；重启后仍会保留，进入批量提交时会自动带入",
+      );
+      onStorefrontPrefillChange(order.woHeaderId, true);
+      setStorefrontPrefillOpen(false);
+    } catch (error) {
+      setStorefrontPrefillStatus("error");
+      setStorefrontPrefillMessage(
+        error instanceof Error ? error.message : "保存门头预填照片失败",
+      );
+    }
+  };
+
+  const removeStorefrontPrefill = async () => {
+    if (!order || !localAccountKey || !storefrontPrefill) return;
+    if (!storefrontRemoveConfirm) {
+      setStorefrontRemoveConfirm(true);
+      return;
+    }
+    setStorefrontPrefillStatus("saving");
+    setStorefrontPrefillMessage("正在删除本地门头预填…");
+    try {
+      await deleteStorefrontPhotoPrefill(localAccountKey, order.woHeaderId);
+      setStorefrontPrefill(null);
+      setStorefrontPrefillFile(null);
+      setStorefrontPrefillDraft(null);
+      setStorefrontRemoveConfirm(false);
+      setStorefrontPrefillStatus("success");
+      setStorefrontPrefillMessage("已删除当前工单的本地门头预填");
+      onStorefrontPrefillChange(order.woHeaderId, false);
+      setStorefrontPrefillOpen(false);
+    } catch (error) {
+      setStorefrontPrefillStatus("error");
+      setStorefrontPrefillMessage(
+        error instanceof Error ? error.message : "删除门头预填照片失败",
+      );
+    }
+  };
+
+  useEffect(() => {
+    if (!storefrontPrefillOpen) return;
+    const closeOnAndroidBack = (event: Event) => {
+      if (
+        storefrontPrefillStatus === "loading" ||
+        storefrontPrefillStatus === "saving"
+      )
+        return;
+      event.preventDefault();
+      setStorefrontPrefillOpen(false);
+      setStorefrontPrefillDraft(storefrontPrefillFile);
+      setStorefrontRemoveConfirm(false);
+    };
+    window.addEventListener("kidindin:back", closeOnAndroidBack);
+    return () =>
+      window.removeEventListener("kidindin:back", closeOnAndroidBack);
+  }, [
+    storefrontPrefillFile,
+    storefrontPrefillOpen,
+    storefrontPrefillStatus,
+  ]);
 
   const runResidentSecurityPrefill = async () => {
     if (
@@ -425,12 +598,26 @@ export function AppDrawer({
     );
     setQuickPrefillPreview(null);
     try {
-      const inspected = await inspectResidentSecurityPrefill(order);
-      const preview = await saveResidentSecurityPrefill(
-        order,
-        inspected.historyWoHeaderId,
-        gasMeterPhoto ?? undefined,
-      );
+      let preview: ResidentSecurityPrefillPreview;
+      try {
+        const inspected = await inspectResidentSecurityPrefill(order);
+        preview = await saveResidentSecurityPrefill(
+          order,
+          inspected.historyWoHeaderId,
+          gasMeterPhoto ?? undefined,
+        );
+      } catch (error) {
+        if (
+          !gasMeterPhoto ||
+          !isResidentSecurityHistoryMissingError(error)
+        ) {
+          throw error;
+        }
+        preview = await saveResidentSecurityGasMeterPhotoOnly(
+          order,
+          gasMeterPhoto,
+        );
+      }
       setQuickPrefillPreview(preview);
       setQuickPrefillStatus("success");
       const hazardResult =
@@ -438,7 +625,9 @@ export function AppDrawer({
           ? `当前识别 ${preview.hazards.length} 项隐患`
           : preview.hazardMessage;
       setQuickPrefillMessage(
-        preview.prefillCount > 0
+        preview.historyStatus === "missing"
+          ? `${preview.historyYear} 年未找到同户已完成的居民安检单；已仅预填燃气表照片，未填写任何历史选项。${hazardResult}`
+          : preview.prefillCount > 0
           ? `已预填 ${preview.prefillCount} 项，${
               preview.gasMeterPhotoStatus === "uploaded"
                 ? "燃气表照片已加安检水印，"
@@ -812,7 +1001,58 @@ export function AppDrawer({
                       ，并按安检规则添加当前时间水印。
                     </p>
                   ) : null}
+                  {quickPrefillPreview.historyStatus === "missing" ? (
+                    <p>
+                      {quickPrefillPreview.historyYear} 年没有合格的居民安检记录，本次未填写任何历史选项。
+                    </p>
+                  ) : null}
                 </div>
+              ) : null}
+              <button
+                type="button"
+                className="storefront-prefill-quick-action"
+                disabled={
+                  !canStorefrontPrefill ||
+                  storefrontPrefillStatus === "loading" ||
+                  storefrontPrefillStatus === "saving"
+                }
+                onClick={openStorefrontPrefill}
+              >
+                <span className="detail-quick-action-icon">
+                  <Icon name="home" size={18} />
+                </span>
+                <span>
+                  <b>到访不遇门头预填</b>
+                  <small>
+                    {storefrontPrefillStatus === "loading"
+                      ? "正在读取本机持久预填"
+                      : storefrontPrefillStatus === "saving"
+                        ? "正在保存，请勿关闭 App"
+                        : storefrontPrefill
+                          ? `已保存 ${storefrontSavedAt}，批量提交会自动带入`
+                          : canStorefrontPrefill
+                            ? "先拍照保存，批量提交时无需再次选择门头照"
+                            : "当前登录无法使用本地持久预填"}
+                  </small>
+                </span>
+                <Icon
+                  name={
+                    storefrontPrefillStatus === "loading" ||
+                    storefrontPrefillStatus === "saving"
+                      ? "refresh"
+                      : storefrontPrefill
+                        ? "check"
+                        : "chevron"
+                  }
+                  size={16}
+                />
+              </button>
+              {storefrontPrefillMessage ? (
+                <p
+                  className={`detail-quick-action-message storefront-prefill-message status-${storefrontPrefillStatus}`}
+                >
+                  {storefrontPrefillMessage}
+                </p>
               ) : null}
               <button
                 type="button"
@@ -1382,6 +1622,94 @@ export function AppDrawer({
             </div>,
             document.body,
           )}
+        {storefrontPrefillOpen && order &&
+          createPortal(
+            <div
+              className="retry-confirm-backdrop"
+              onClick={(event) => {
+                event.stopPropagation();
+                closeStorefrontPrefill();
+              }}
+            >
+              <section
+                className="retry-confirm-dialog storefront-prefill-dialog"
+                role="dialog"
+                aria-modal="true"
+                aria-label="到访不遇门头预填"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <h3>到访不遇门头预填</h3>
+                <p>
+                  为当前工单“{order.woNumber || order.woHeaderId}”提前保存门头照片。照片按当前账号和工单绑定，只保存在本机 App；关闭或重启后仍会保留，进入批量提交时自动带入。
+                </p>
+                <div className="storefront-prefill-photo-field">
+                  <span>当前工单门头照片</span>
+                  <UploadFilePicker
+                    file={storefrontPrefillDraft}
+                    inputKey={`${order.woHeaderId}-storefront-prefill`}
+                    label="到访不遇门头照片"
+                    placeholder="从相册选择门头照片"
+                    cameraCapture={mobileRuntime}
+                    onPick={(file) => {
+                      setStorefrontPrefillDraft(file);
+                      setStorefrontRemoveConfirm(false);
+                      if (file) void persistStorefrontPrefill(file);
+                    }}
+                  />
+                </div>
+                {storefrontPrefill ? (
+                  <p className="storefront-prefill-saved-meta">
+                    已持久保存 · {storefrontSavedAt} · {storefrontPrefill.fileName}
+                  </p>
+                ) : (
+                  <p className="storefront-prefill-saved-meta">
+                    选中候选图片并确认后会立即持久保存到 App；此时不会上传 CIS。
+                  </p>
+                )}
+                {storefrontPrefillStatus === "error" &&
+                storefrontPrefillMessage ? (
+                  <p className="storefront-prefill-dialog-error">
+                    {storefrontPrefillMessage}
+                  </p>
+                ) : null}
+                <div className="storefront-prefill-actions">
+                  {storefrontPrefill ? (
+                    <button
+                      type="button"
+                      className={storefrontRemoveConfirm ? "confirm-remove" : ""}
+                      disabled={storefrontPrefillStatus === "saving"}
+                      onClick={() => void removeStorefrontPrefill()}
+                    >
+                      {storefrontRemoveConfirm ? "再次点击确认删除" : "删除本地预填"}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={storefrontPrefillStatus === "saving"}
+                      onClick={closeStorefrontPrefill}
+                    >
+                      取消
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    disabled={
+                      !storefrontPrefillDraft ||
+                      storefrontPrefillStatus === "saving"
+                    }
+                    onClick={() => void persistStorefrontPrefill()}
+                  >
+                    {storefrontPrefillStatus === "saving"
+                      ? "正在保存…"
+                      : storefrontPrefill
+                        ? "更新持久预填"
+                        : "持久保存到 App"}
+                  </button>
+                </div>
+              </section>
+            </div>,
+            document.body,
+          )}
         {quickPrefillConfirmOpen && order &&
           createPortal(
             <div
@@ -1402,7 +1730,7 @@ export function AppDrawer({
                 <h3>确认预填当前工单？</h3>
                 <p>
                   将读取该住户上一年度已完成的居民安检单，并通过 editAct
-                  预存已批准的选项及人口、品牌/型号、使用年限等文本到当前工单“{order.woNumber || order.woHeaderId}”。历史图片不会复制；如选择当前燃气表照片，则添加本次安检时间水印后上传。
+                  预存已批准的选项及人口、品牌/型号、使用年限等文本到当前工单“{order.woNumber || order.woHeaderId}”。历史图片不会复制；如选择当前燃气表照片，则添加本次安检时间水印后上传。若上一年度没有合格的居民安检记录，则只预填本次燃气表照片，不填写任何历史选项，也不会回退到更早年份。
                 </p>
                 <div className="quick-prefill-photo-field">
                   <span>当前燃气表照片（可选）</span>

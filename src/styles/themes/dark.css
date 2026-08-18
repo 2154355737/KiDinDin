@@ -88,6 +88,11 @@ html[data-theme="dark"] #root {
   border-color: var(--accent-border);
 }
 
+.theme-dark .mode-options button:disabled small {
+  color: var(--dark-text-muted);
+  background: #202020;
+}
+
 .theme-dark .order-card.selected {
   box-shadow: inset 3px 0 var(--dark-accent);
 }
@@ -389,6 +394,11 @@ html[data-theme="dark"] #root {
 .theme-dark .status-completed {
   color: #72d6a0;
   background: #17271f;
+}
+
+.theme-dark .storefront-prefill-badge {
+  color: #8de0b4;
+  background: #173527;
 }
 
 .theme-dark .status-关闭失败,

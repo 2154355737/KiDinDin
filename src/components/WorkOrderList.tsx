@@ -194,6 +194,8 @@ export function StatusBadge({ status }: { status: OrderStatus }) {
 export function WorkOrderList({
   orders,
   selected = [],
+  selectionDisabled = false,
+  storefrontPrefilledOrderHeaderIds = [],
   localMetaById = {},
   groupByFloor = false,
   floorGroupingResetKey,
@@ -209,6 +211,8 @@ export function WorkOrderList({
 }: {
   orders: WorkOrder[];
   selected?: string[];
+  selectionDisabled?: boolean;
+  storefrontPrefilledOrderHeaderIds?: readonly string[];
   localMetaById?: Record<string, LocalWorkOrderMeta>;
   groupByFloor?: boolean;
   floorGroupingResetKey?: string;
@@ -227,6 +231,10 @@ export function WorkOrderList({
   const floorGroupIdPrefix = useId().replace(/:/g, "");
   const previousCountRef = useRef(orders.length);
   const selectedIds = useMemo(() => new Set(selected), [selected]);
+  const storefrontPrefilledIds = useMemo(
+    () => new Set(storefrontPrefilledOrderHeaderIds),
+    [storefrontPrefilledOrderHeaderIds],
+  );
   const orderSequence = useMemo(
     () => orders.map(orderMotionKey).join("|"),
     [orders],
@@ -711,6 +719,7 @@ export function WorkOrderList({
     const orderKey = orderMotionKey(order);
     const localMeta = localMetaById[order.woHeaderId];
     const isSelected = selectedIds.has(order.id);
+    const isStorefrontPrefilled = storefrontPrefilledIds.has(order.woHeaderId);
     const isSwipeRow = swipeVisual.orderKey === orderKey;
     const swipeOffset = isSwipeRow ? swipeVisual.offsetX : 0;
     const swipePhase = isSwipeRow ? swipeVisual.phase : "idle";
@@ -858,7 +867,18 @@ export function WorkOrderList({
                   </span>
                 )}
               </span>
-              <StatusBadge status={order.status} />
+              <span className="order-status-cluster">
+                {isStorefrontPrefilled ? (
+                  <span
+                    className="storefront-prefill-badge"
+                    title="已预填到访不遇门头照片"
+                  >
+                    <Icon name="camera" size={10} />
+                    到访预填
+                  </span>
+                ) : null}
+                <StatusBadge status={order.status} />
+              </span>
             </div>
             <div className="order-title">
               {order.resident}
@@ -886,7 +906,10 @@ export function WorkOrderList({
           <button
             type="button"
             className="select-control"
-            onClick={() => onToggle?.(order.id)}
+            disabled={selectionDisabled}
+            onClick={() => {
+              if (!selectionDisabled) onToggle?.(order.id);
+            }}
             aria-label={`选择${order.id}`}
           >
             <span>{isSelected && <Icon name="check" size={15} />}</span>

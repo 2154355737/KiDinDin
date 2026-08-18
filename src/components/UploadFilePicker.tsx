@@ -22,12 +22,16 @@ function ImagePreviewDialog({
   fileName,
   label,
   url,
+  actionError,
+  confirming = false,
   onClose,
   onConfirm,
 }: {
   fileName: string;
   label: string;
   url: string;
+  actionError?: string;
+  confirming?: boolean;
   onClose: () => void;
   onConfirm?: () => void;
 }) {
@@ -63,7 +67,12 @@ function ImagePreviewDialog({
             <b>{label}</b>
             <span>{fileName}</span>
           </div>
-          <button type="button" aria-label="关闭图片预览" onClick={onClose}>
+          <button
+            type="button"
+            aria-label="关闭图片预览"
+            disabled={confirming}
+            onClick={onClose}
+          >
             <Icon name="close" size={22} />
           </button>
         </header>
@@ -72,8 +81,17 @@ function ImagePreviewDialog({
         </div>
         {onConfirm ? (
           <footer>
-            <button type="button" onClick={onClose}>取消</button>
-            <button type="button" onClick={onConfirm}>选择这张图片</button>
+            {actionError ? (
+              <p className="image-preview-action-error" role="alert">
+                {actionError}
+              </p>
+            ) : null}
+            <button type="button" disabled={confirming} onClick={onClose}>
+              取消
+            </button>
+            <button type="button" disabled={confirming} onClick={onConfirm}>
+              {confirming ? "正在检查重复…" : "选择这张图片"}
+            </button>
           </footer>
         ) : null}
       </section>
@@ -87,18 +105,59 @@ export function UploadFilePicker({
   inputKey,
   label,
   placeholder,
+  cameraCapture = false,
   onPick,
 }: {
   file: File | null | undefined;
   inputKey: string;
   label: string;
   placeholder: string;
-  onPick: (file: File | null) => void;
+  cameraCapture?: boolean;
+  onPick: (file: File | null) => void | Promise<void>;
 }) {
   const url = useFilePreviewUrl(file);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const pendingUrl = useFilePreviewUrl(pendingFile);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [pendingSource, setPendingSource] = useState<"camera" | "library">(
+    "library",
+  );
+  const [pendingError, setPendingError] = useState("");
+  const [confirming, setConfirming] = useState(false);
+
+  const stageSelectedFile = (
+    input: HTMLInputElement,
+    source: "camera" | "library",
+  ) => {
+    const nextFile = input.files?.[0] ?? null;
+    input.value = "";
+    if (!nextFile) return;
+    setPendingError("");
+    setPendingSource(source);
+    setPendingFile(nextFile);
+  };
+
+  const closePendingPreview = () => {
+    if (confirming) return;
+    setPendingError("");
+    setPendingFile(null);
+  };
+
+  const confirmPendingFile = async () => {
+    if (!pendingFile || confirming) return;
+    setConfirming(true);
+    setPendingError("");
+    try {
+      await onPick(pendingFile);
+      setPendingFile(null);
+    } catch (error) {
+      setPendingError(
+        error instanceof Error ? error.message : "检查图片是否重复失败",
+      );
+    } finally {
+      setConfirming(false);
+    }
+  };
 
   useEffect(() => {
     if (!url) setPreviewOpen(false);
@@ -106,17 +165,35 @@ export function UploadFilePicker({
 
   return (
     <div className="workflow-file-picker">
+      {cameraCapture ? (
+        <label className="native-camera-picker">
+          <Icon name="camera" size={20} />
+          <span>
+            <b>现场拍照</b>
+            <small>调用安卓原生后置相机</small>
+          </span>
+          <Icon name="chevron" size={17} />
+          <input
+            key={`${inputKey}-camera`}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            aria-label={`使用安卓原生相机拍摄${label}`}
+            onChange={(event) =>
+              stageSelectedFile(event.currentTarget, "camera")
+            }
+          />
+        </label>
+      ) : null}
       <label className="file-picker">
         <span>{file?.name || placeholder}</span>
         <input
           key={inputKey}
           type="file"
           accept="image/*"
-          onChange={(event) => {
-            const nextFile = event.target.files?.[0] ?? null;
-            event.currentTarget.value = "";
-            if (nextFile) setPendingFile(nextFile);
-          }}
+          onChange={(event) =>
+            stageSelectedFile(event.currentTarget, "library")
+          }
         />
       </label>
       {url ? (
@@ -142,13 +219,12 @@ export function UploadFilePicker({
       {pendingFile && pendingUrl ? (
         <ImagePreviewDialog
           fileName={pendingFile.name}
-          label={`${label}候选图片`}
+          label={`${label}${pendingSource === "camera" ? "现场拍照" : "相册"}候选图片`}
           url={pendingUrl}
-          onClose={() => setPendingFile(null)}
-          onConfirm={() => {
-            onPick(pendingFile);
-            setPendingFile(null);
-          }}
+          actionError={pendingError}
+          confirming={confirming}
+          onClose={closePendingPreview}
+          onConfirm={() => void confirmPendingFile()}
         />
       ) : null}
     </div>

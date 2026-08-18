@@ -421,6 +421,33 @@
   white-space: nowrap;
 }
 
+.order-status-cluster {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.storefront-prefill-badge {
+  min-height: 15px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 5px;
+  border-radius: 4px;
+  color: #13724d;
+  background: #e8f8ef;
+  font-size: 8px;
+  line-height: 15px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.storefront-prefill-badge .icon {
+  flex: none;
+}
+
 .status-待准备 {
   color: #687990;
   background: #edf1f6;
@@ -448,6 +475,11 @@
   display: grid;
   place-items: center;
   padding: 0;
+}
+
+.select-control:disabled {
+  cursor: wait;
+  opacity: .5;
 }
 
 .select-control>span {

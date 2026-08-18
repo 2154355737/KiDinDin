@@ -2,6 +2,7 @@ import {
   BarChart3,
   Calendar,
   CalendarClock,
+  Camera,
   Check,
   ClipboardCheck,
   Copy,
@@ -36,6 +37,7 @@ import {
 const icons: Record<string, LucideIcon> = {
   calendar: Calendar,
   appointment: CalendarClock,
+  camera: Camera,
   chart: BarChart3,
   check: Check,
   audit: ClipboardCheck,
