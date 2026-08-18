@@ -53,3 +53,6 @@ src-tauri/gen/android/app/src/main/res/mipmap-xxhdpi/ic_launcher_foreground.png
 
 # Local reverse-engineering references (keep on this machine, never commit)
 local-reference/dingtalk-miniapp/
+.codex-docx-deps/
+.codex-report-build/
+reports/

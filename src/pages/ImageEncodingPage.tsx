@@ -105,7 +105,7 @@ export function ImageEncodingPage({ onBack }: { onBack: () => void }) {
     return records.filter((record) => {
       if (filter !== "all" && record.status !== filter) return false;
       if (!keyword) return true;
-      return [record.name, record.sourceName, record.note, record.failureMessage]
+      return [record.name, record.contentSha256, record.sourceName, record.note, record.failureMessage]
         .some((value) => value?.toLocaleLowerCase().includes(keyword));
     });
   }, [filter, query, records]);
@@ -162,11 +162,12 @@ export function ImageEncodingPage({ onBack }: { onBack: () => void }) {
 
     <section className="encoding-rule-card">
       <span className="encoding-rule-icon"><Icon name="database" size={21} /></span>
-      <div><b>跨日期永久去重库</b><code>IMG_YYYY + 6位随机码 + MM + 3位随机码 + DD.jpg</code><small>编码记录不可删除或改名，防止未来重新使用。预览与备注仅保存在本机。</small></div>
+      <div><b>文件名 + SHA-256 双随机</b><code>JPEG COM 随机摘要 → 每次上传前 SHA-256 不同</code><small>随机摘要写入 JPEG 非画面注释段，不修改尺寸、颜色或压缩扫描数据。旧编码记录继续保留。</small></div>
     </section>
 
     {selected ? <section className="encoding-editor">
       <div className="encoding-editor-heading"><div><span>编辑本地预览</span><code>{selected.name}</code></div><button type="button" onClick={() => setSelectedName(null)} aria-label="关闭编辑"><Icon name="close" size={18} /></button></div>
+      <div className="encoding-sha-detail"><span>上传前文件 SHA-256</span><code>{selected.contentSha256 ?? "旧记录未保存 SHA-256"}</code></div>
       <div className="encoding-preview-editor">
         <div className="encoding-preview-frame">{draftPreview ? <img src={draftPreview} alt={`${selected.name} 本地预览`} /> : <span><Icon name="note" size={25} />暂无预览</span>}</div>
         <div className="encoding-preview-actions">
@@ -195,6 +196,7 @@ export function ImageEncodingPage({ onBack }: { onBack: () => void }) {
           <div><code>{record.name}</code><span className={`encoding-status ${record.status}`}>{statusLabels[record.status]}</span></div>
           <b>{record.sourceName || "未知原文件名"}</b>
           <small>{formatDateTime(record.generatedAt)} · {formatFileSize(record.sourceSize)}</small>
+          <small className="encoding-hash-line" title={record.contentSha256 ?? undefined}><span>SHA-256</span><code>{record.contentSha256 ?? "旧记录未保存"}</code></small>
           {record.note ? <p>{record.note}</p> : null}
           {record.failureMessage ? <em>{record.failureMessage}</em> : null}
         </div>

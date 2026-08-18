@@ -159,6 +159,27 @@
   background: var(--surface-soft);
 }
 
+.encoding-sha-detail {
+  display: grid;
+  gap: 5px;
+  margin-top: 12px;
+  padding: 10px 11px;
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.encoding-sha-detail span {
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.encoding-sha-detail code {
+  overflow-wrap: anywhere;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
 .encoding-preview-editor {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 108px;
@@ -410,6 +431,22 @@
 
 .encoding-record-main em {
   color: #c94c58;
+}
+
+.encoding-record-main .encoding-hash-line {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.encoding-hash-line span {
+  flex: 0 0 auto;
+}
+
+.encoding-hash-line code {
+  min-width: 0;
+  color: var(--text-tertiary);
 }
 
 .encoding-edit-button {

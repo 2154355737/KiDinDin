@@ -9,6 +9,7 @@ export type UploadFileNameStatus = "reserved" | "uploaded" | "failed";
 
 export type UsedUploadFileName = {
   name: string;
+  contentSha256: string | null;
   generatedAt: string;
   sourceName: string;
   sourceSize: number;
@@ -149,6 +150,11 @@ function transactionDone(transaction: IDBTransaction, action: string) {
 function normalizeRecord(value: UsedUploadFileName): UsedUploadFileName {
   return {
     ...value,
+    contentSha256:
+      typeof value.contentSha256 === "string" &&
+      /^[a-f0-9]{64}$/i.test(value.contentSha256)
+        ? value.contentSha256.toLowerCase()
+        : null,
     previewDataUrl: typeof value.previewDataUrl === "string" ? value.previewDataUrl : null,
     note: typeof value.note === "string" ? value.note : "",
     status: value.status === "uploaded" || value.status === "failed" ? value.status : "reserved",
@@ -157,13 +163,19 @@ function normalizeRecord(value: UsedUploadFileName): UsedUploadFileName {
   };
 }
 
-export async function reserveUniqueUploadFileName(file: File, previewDataUrl: string | null, date = new Date()) {
+export async function reserveUniqueUploadFileName(
+  file: File,
+  previewDataUrl: string | null,
+  date = new Date(),
+  contentSha256: string | null = null,
+) {
   const database = await openDatabase();
   try {
     for (let attempt = 0; attempt < MAX_GENERATION_ATTEMPTS; attempt += 1) {
       const name = await buildCandidate(file, date);
       const reserved = await tryReserveName(database, {
         name,
+        contentSha256,
         generatedAt: new Date().toISOString(),
         sourceName: file.name,
         sourceSize: file.size,

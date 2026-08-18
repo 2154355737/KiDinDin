@@ -1,4 +1,5 @@
 import { reserveUniqueUploadFileName } from "./uploadFileNameStore";
+import { randomizeJpegSha256 } from "./jpegSha256Randomization";
 
 export type AuthStatus = {
   authenticated: boolean;
@@ -147,13 +148,19 @@ async function normalizeJpeg(file: File) {
 
 export async function fileToNativeUpload(file: File): Promise<NativeUploadFile> {
   const jpeg = await normalizeJpeg(file);
-  const previewDataUrl = await createPreviewDataUrl(jpeg, file.name);
-  const name = await reserveUniqueUploadFileName(file, previewDataUrl);
+  const randomized = await randomizeJpegSha256(jpeg, file);
+  const previewDataUrl = await createPreviewDataUrl(randomized.blob, file.name);
+  const name = await reserveUniqueUploadFileName(
+    file,
+    previewDataUrl,
+    new Date(),
+    randomized.contentSha256,
+  );
   const base64 = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error("读取图片失败"));
     reader.onload = () => resolve(String(reader.result ?? ""));
-    reader.readAsDataURL(jpeg);
+    reader.readAsDataURL(randomized.blob);
   });
 
   return { base64, mime: "image/jpeg", name };
