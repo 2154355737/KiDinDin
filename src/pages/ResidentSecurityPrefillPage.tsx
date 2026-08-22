@@ -26,6 +26,7 @@ type PrefillState = {
 
 export type ResidentSecurityPrefillPageProps = {
   date: string;
+  initialWoHeaderId?: string;
   onBack: () => void;
   onDateChange: (value: string) => void;
   orders: WorkOrder[];
@@ -67,6 +68,7 @@ function matchesQuery(order: WorkOrder, query: string) {
 
 export function ResidentSecurityPrefillPage({
   date,
+  initialWoHeaderId,
   onBack,
   onDateChange,
   orders,
@@ -93,10 +95,17 @@ export function ResidentSecurityPrefillPage({
 
   useEffect(() => {
     setQuery("");
-    setSelectedOrderId("");
+    const initialOrder = residentOrders.find(
+      (order) => order.woHeaderId === initialWoHeaderId,
+    );
+    setSelectedOrderId(initialOrder?.id ?? "");
     setState(undefined);
-    setMessage("");
-  }, [date, residentOrderKey]);
+    setMessage(
+      initialOrder
+        ? `已由悬浮窗识别工单 ${initialOrder.woNumber || initialOrder.woHeaderId}`
+        : "",
+    );
+  }, [date, initialWoHeaderId, residentOrderKey, residentOrders]);
 
   const selectOrder = (order: WorkOrder) => {
     if (busy) return;

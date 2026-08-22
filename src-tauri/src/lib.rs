@@ -7,6 +7,7 @@ use tauri::{AppHandle, Manager, State};
 use uuid::Uuid;
 mod vacant_room;
 mod img_augment;
+mod floating_overlay;
 #[cfg(mobile)]
 use tauri_plugin_biometric::{AuthOptions, BiometricExt};
 
@@ -588,6 +589,7 @@ async fn cis_upload_files(
 pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(floating_overlay::init())
         .plugin(vacant_room::init());
     #[cfg(mobile)]
     let builder = builder
@@ -607,6 +609,15 @@ pub fn run() {
             cis_export_auth_session,
             device_identity_preview,
             is_mobile_runtime,
+            floating_overlay::floating_overlay_status,
+            floating_overlay::floating_overlay_request_permission,
+            floating_overlay::floating_overlay_show,
+            floating_overlay::floating_overlay_hide,
+            floating_overlay::floating_overlay_open_accessibility_settings,
+            floating_overlay::work_order_index_sync,
+            floating_overlay::consume_pending_prefill_target,
+            floating_overlay::report_work_order_prefill,
+            floating_overlay::report_work_order_security_date,
             cis_download_file,
             vacant_room::cis_cache_vacant_room_image,
             vacant_room::clear_vacant_room_image_cache,

@@ -9,9 +9,12 @@ import {
   type AllWorkOrderFilters,
   type CisWorkOrder,
 } from "../services/workOrderApi";
+import { isResidentSecurityPrefillTarget } from "../services/residentSecurityPrefillApi";
+import { isNativeRuntime, syncNativeWorkOrderIndex } from "../services/tauri";
 import { getWorkOrderStatus, type WorkOrder } from "../types/workOrder";
 
 type AllWorkOrdersPageProps = {
+  accountKey: string;
   onBack: () => void;
   onOpenDetail: (order: CisWorkOrder) => void;
 };
@@ -153,7 +156,7 @@ function toUiOrder(source: CisWorkOrder): WorkOrder {
   };
 }
 
-export function AllWorkOrdersPage({ onBack, onOpenDetail }: AllWorkOrdersPageProps) {
+export function AllWorkOrdersPage({ accountKey, onBack, onOpenDetail }: AllWorkOrdersPageProps) {
   const initialFilters = useMemo(createDefaultFilters, []);
   const [draft, setDraft] = useState<AllWorkOrderFilters>(initialFilters);
   const [applied, setApplied] = useState<AllWorkOrderFilters>(initialFilters);
@@ -195,6 +198,31 @@ export function AllWorkOrdersPage({ onBack, onOpenDetail }: AllWorkOrdersPagePro
     void fetchAllWorkOrders(applied, pageIndex, ALL_WORK_ORDERS_PAGE_SIZE, sortDirection)
       .then((response) => {
         if (sequence !== requestSequence.current) return;
+        if (accountKey && isNativeRuntime()) {
+          const grouped = new Map<string, CisWorkOrder[]>();
+          response.records.forEach((order) => {
+            const sourceDate = valueText(order.createTime).slice(0, 10) || applied.dateCreateEnd;
+            grouped.set(sourceDate, [...(grouped.get(sourceDate) ?? []), order]);
+          });
+          grouped.forEach((dayOrders, sourceDate) => {
+            void syncNativeWorkOrderIndex(
+              accountKey,
+              sourceDate,
+              dayOrders.map((order) => {
+                const uiOrder = toUiOrder(order);
+                return {
+                  address: uiOrder.address,
+                  contactPhone: valueText(order.contactPhone) || valueText(order.phoneNumber),
+                  eligiblePrefill: isResidentSecurityPrefillTarget(uiOrder),
+                  rawJson: JSON.stringify(order),
+                  resident: uiOrder.resident,
+                  woHeaderId: uiOrder.woHeaderId,
+                  woNumber: uiOrder.woNumber,
+                };
+              }),
+            ).catch((reason) => console.warn("同步全部工单本地索引失败", reason));
+          });
+        }
         setRecords((current) => pageIndex === 1
           ? response.records
           : appendUniqueOrders(current, response.records));
@@ -239,7 +267,7 @@ export function AllWorkOrdersPage({ onBack, onOpenDetail }: AllWorkOrdersPagePro
           setLoading(false);
         }
       });
-  }, [applied, pageIndex, refreshKey, sortDirection]);
+  }, [accountKey, applied, pageIndex, refreshKey, sortDirection]);
 
   const visibleRecords = useMemo(
     () => records.filter((order) => matchesLocalSearch(order, localQuery)),

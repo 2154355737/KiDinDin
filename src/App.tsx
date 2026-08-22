@@ -54,9 +54,14 @@ import {
   type WorkOrderDetail,
 } from "./services/workOrderApi";
 import {
+  consumePendingPrefillTarget,
+  fetchFloatingOverlayStatus,
   fetchIsMobileRuntime,
   isWorkOrderAuthExpiredError,
   isNativeRuntime,
+  reportNativeWorkOrderPrefill,
+  reportNativeWorkOrderSecurityDate,
+  syncNativeWorkOrderIndex,
   WORK_ORDER_AUTH_EXPIRED_EVENT,
   type AuthStatus,
   type WorkOrderAuthExpiredDetail,
@@ -78,11 +83,17 @@ import {
   getStorefrontPhotoPrefills,
   storefrontPhotoPrefillToFile,
 } from "./services/storefrontPrefillStore";
+import { getSignedWorkOrderHeaderIds } from "./services/signatureStore";
 import {
   findDuplicateImage,
   findFirstDuplicateImage,
   type ImageDeduplicationEntry,
 } from "./services/imageDeduplication";
+import {
+  inspectResidentSecurityPrefill,
+  isResidentSecurityPrefillTarget,
+  saveResidentSecurityPrefill,
+} from "./services/residentSecurityPrefillApi";
 import {
   getWorkOrderStatus,
   matchesWorkOrderStatus,
@@ -122,6 +133,16 @@ const MorePage = lazy(() =>
 const ImageEncodingPage = lazy(() =>
   import("./pages/ImageEncodingPage").then((module) => ({
     default: module.ImageEncodingPage,
+  })),
+);
+const SignaturePage = lazy(() =>
+  import("./pages/SignaturePage").then((module) => ({
+    default: module.SignaturePage,
+  })),
+);
+const SignatureManagementPage = lazy(() =>
+  import("./pages/SignatureManagementPage").then((module) => ({
+    default: module.SignatureManagementPage,
   })),
 );
 const AllWorkOrdersPage = lazy(() =>
@@ -699,6 +720,7 @@ export default function App() {
   const authExpiryHandlingRef = useRef(false);
   const sessionEstablishedAtRef = useRef(0);
   const ordersRequestSequenceRef = useRef(0);
+  const securityDateLookupsRef = useRef(new Set<string>());
   const [historyFiles, setHistoryFiles] = useState<Record<string, File>>({});
   const [historyMode, setHistoryMode] = useState<"manual" | "auto">("manual");
   const [submitMode, setSubmitMode] =
@@ -730,6 +752,13 @@ export default function App() {
     useState<string[]>([]);
   const [storefrontPrefilledOrderHeaderIds, setStorefrontPrefilledOrderHeaderIds] =
     useState<string[]>([]);
+  const [signedOrderHeaderIds, setSignedOrderHeaderIds] = useState<string[]>([]);
+  const [signatureOrder, setSignatureOrder] = useState<WorkOrder | null>(null);
+  const signatureReturnRef = useRef<{
+    mainTab: MainTab;
+    order: WorkOrder;
+    screen: Screen;
+  } | null>(null);
   const [batchStorefrontMessage, setBatchStorefrontMessage] = useState("");
   const [batchStorefrontLoading, setBatchStorefrontLoading] = useState(false);
   const [batchDuplicateChecking, setBatchDuplicateChecking] = useState(false);
@@ -1036,6 +1065,26 @@ export default function App() {
   }, [localAccountKey, storefrontPrefillLookupKey]);
 
   useEffect(() => {
+    let active = true;
+    if (!localAccountKey || !storefrontPrefillLookupIds.length) {
+      setSignedOrderHeaderIds([]);
+      return () => {
+        active = false;
+      };
+    }
+    void getSignedWorkOrderHeaderIds(localAccountKey, storefrontPrefillLookupIds)
+      .then((storedHeaderIds) => {
+        if (active) setSignedOrderHeaderIds(storedHeaderIds);
+      })
+      .catch(() => {
+        if (active) setSignedOrderHeaderIds([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [localAccountKey, storefrontPrefillLookupKey]);
+
+  useEffect(() => {
     if (screen !== "select" || submitMode !== "all-manual") return;
     if (batchAutoSelectKeyRef.current === batchAutoSelectionKey) return;
 
@@ -1271,6 +1320,166 @@ export default function App() {
         setLoadingOrders(false);
     }
   }, [loggedIn, selectedDate]);
+
+  useEffect(() => {
+    if (!isNativeRuntime() || !loggedIn || !localAccountKey || loadingOrders)
+      return;
+    const entries = orders.map((order) => {
+      const raw = order.raw ?? {};
+      return {
+        address: order.address,
+        contactPhone:
+          textField(raw.contactPhone) ||
+          textField(raw.phoneNumber) ||
+          textField(raw.mobile),
+        eligiblePrefill: isResidentSecurityPrefillTarget(order),
+        rawJson: JSON.stringify(raw),
+        resident: order.resident,
+        woHeaderId: order.woHeaderId,
+        woNumber: order.woNumber,
+      };
+    });
+    void syncNativeWorkOrderIndex(localAccountKey, selectedDate, entries).catch(
+      (error) => console.warn("同步本地工单索引失败", error),
+    );
+  }, [loadingOrders, localAccountKey, loggedIn, orders, selectedDate]);
+
+  useEffect(() => {
+    if (!isNativeRuntime() || !loggedIn || !localAccountKey) return;
+    let disposed = false;
+    let checking = false;
+    const updateRecentSecurityDate = async () => {
+      if (checking || disposed) return;
+      checking = true;
+      try {
+        const status = await fetchFloatingOverlayStatus();
+        const recognition = status.recognition;
+        if (
+          !recognition.woHeaderId ||
+          recognition.securityDate ||
+          ![
+            "matched",
+            "repeat_confirm",
+            "prefill_error",
+            "prefill_success",
+          ].includes(
+            recognition.state,
+          ) ||
+          (recognition.accountKey && recognition.accountKey !== localAccountKey)
+        ) {
+          return;
+        }
+        const lookupKey = `${recognition.woHeaderId}:${recognition.recognizedAt}`;
+        if (securityDateLookupsRef.current.has(lookupKey)) return;
+        securityDateLookupsRef.current.add(lookupKey);
+        let recentDate = "暂无历史记录";
+        try {
+          const parsed = JSON.parse(recognition.rawJson || "{}") as CisWorkOrder;
+          const target = toUiOrder({
+            ...parsed,
+            woHeaderId: recognition.woHeaderId,
+            woNumber: recognition.woNumber || parsed.woNumber,
+            userName: parsed.userName || recognition.resident,
+            addressDetailed: parsed.addressDetailed || recognition.address,
+          });
+          if (isResidentSecurityPrefillTarget(target)) {
+            const inspected = await inspectResidentSecurityPrefill(target);
+            recentDate = inspected.historyCompletedAt || "暂无历史记录";
+          } else {
+            recentDate = "不适用";
+          }
+        } catch (error) {
+          console.warn("读取最近安检日期失败", error);
+        }
+        if (!disposed) {
+          await reportNativeWorkOrderSecurityDate(
+            recognition.woHeaderId,
+            recentDate,
+          );
+        }
+      } catch (error) {
+        console.warn("同步悬浮窗最近安检日期失败", error);
+      } finally {
+        checking = false;
+      }
+    };
+    void updateRecentSecurityDate();
+    const interval = window.setInterval(
+      () => void updateRecentSecurityDate(),
+      1_000,
+    );
+    return () => {
+      disposed = true;
+      window.clearInterval(interval);
+    };
+  }, [localAccountKey, loggedIn]);
+
+  useEffect(() => {
+    if (!isNativeRuntime() || !loggedIn || !localAccountKey) return;
+    let consuming = false;
+    const consumeTarget = async () => {
+      if (consuming) return;
+      consuming = true;
+      let targetWoHeaderId = "";
+      try {
+        const pending = await consumePendingPrefillTarget();
+        if (!pending.pending || !("woHeaderId" in pending) || !pending.woHeaderId)
+          return;
+        targetWoHeaderId = pending.woHeaderId;
+        if (pending.accountKey && pending.accountKey !== localAccountKey) {
+          throw new Error("识别工单不属于当前登录账号");
+        }
+        const parsed = JSON.parse(pending.rawJson || "{}") as CisWorkOrder;
+        const target = toUiOrder({
+          ...parsed,
+          woHeaderId: pending.woHeaderId,
+          woNumber: pending.woNumber || parsed.woNumber,
+          userName: parsed.userName || pending.resident,
+          addressDetailed: parsed.addressDetailed || pending.address,
+        });
+        if (!isResidentSecurityPrefillTarget(target)) {
+          throw new Error("当前工单不是可预填的待处理居民安检单");
+        }
+        await reportNativeWorkOrderPrefill(
+          target.woHeaderId,
+          "prefill_running",
+          `正在核对 ${target.woNumber || target.woHeaderId} 的上一年安检内容…`,
+        );
+        const inspected = await inspectResidentSecurityPrefill(target);
+        await reportNativeWorkOrderSecurityDate(
+          target.woHeaderId,
+          inspected.historyCompletedAt || "暂无历史记录",
+        );
+        const saved = await saveResidentSecurityPrefill(
+          target,
+          inspected.historyWoHeaderId,
+        );
+        const message = saved.prefillCount > 0
+          ? `安检预填完成：已写入 ${saved.prefillCount} 项，来源 ${saved.historyYear} 年 ${saved.historyWoNumber}`
+          : "安检预填完成：当前工单已有相同内容，无需重复写入";
+        await reportNativeWorkOrderPrefill(
+          target.woHeaderId,
+          "prefill_success",
+          message,
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "安检预填失败";
+        if (targetWoHeaderId) {
+          await reportNativeWorkOrderPrefill(
+            targetWoHeaderId,
+            "prefill_error",
+            `安检预填失败：${message}`,
+          ).catch(() => undefined);
+        }
+        console.warn("悬浮窗安检预填失败", error);
+      } finally {
+        consuming = false;
+      }
+    };
+    void consumeTarget();
+    const interval = window.setInterval(() => void consumeTarget(), 750);
+    return () => window.clearInterval(interval);
+  }, [localAccountKey, loggedIn]);
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
@@ -1795,6 +2004,37 @@ export default function App() {
     setActiveOrderId(order.id);
     setDrawer("detail");
   };
+
+  const openSignatureFromDetail = (order: WorkOrder) => {
+    signatureReturnRef.current = { mainTab, order, screen };
+    setSignatureOrder(order);
+    setDrawer(null);
+    setScreen("signature");
+  };
+
+  const returnFromSignature = useCallback(() => {
+    const destination = signatureReturnRef.current;
+    setSignatureOrder(null);
+    signatureReturnRef.current = null;
+    if (!destination) {
+      setScreen("orders");
+      setMainTab("home");
+      return;
+    }
+    setScreen(destination.screen);
+    setMainTab(destination.mainTab);
+    setActiveOrderId(destination.order.id);
+    setLocalDetailOrder(destination.order);
+    setDrawer("detail");
+  }, []);
+
+  const updateSignedOrderState = useCallback((woHeaderId: string, saved: boolean) => {
+    setSignedOrderHeaderIds((current) =>
+      saved
+        ? Array.from(new Set([...current, woHeaderId]))
+        : current.filter((id) => id !== woHeaderId),
+    );
+  }, []);
 
   const exportLocalData = async () => {
     const accountKey = localAccountKey;
@@ -2831,9 +3071,13 @@ export default function App() {
       case "resident-security-prefill":
       case "visit-verify":
       case "image-encoding":
+      case "signature-management":
       case "all-work-orders":
         setScreen("orders");
         setMainTab("more");
+        return;
+      case "signature":
+        returnFromSignature();
         return;
       case "settings":
         setScreen("orders");
@@ -2855,6 +3099,7 @@ export default function App() {
     running,
     screen,
     sessionExpiryKey,
+    returnFromSignature,
   ]);
 
   useEffect(() => {
@@ -3006,6 +3251,7 @@ export default function App() {
             storefrontPrefilledOrderHeaderIds={
               storefrontPrefilledOrderHeaderIds
             }
+            signedOrderHeaderIds={signedOrderHeaderIds}
             collapsedFloorGroupKeys={collapsedHomeFloorGroupKeys}
             activeFilterCount={activeFilterCount}
             prioritizePinned={sortField === "original"}
@@ -3088,6 +3334,7 @@ export default function App() {
             }}
             onOpenVisitVerify={() => setScreen("visit-verify")}
             onOpenImageEncoding={() => setScreen("image-encoding")}
+            onOpenSignatureManagement={() => setScreen("signature-management")}
             showToolDescriptions={appSettings.display.showToolDescriptions}
             onExportLocalData={exportLocalData}
             onImportLocalData={importLocalData}
@@ -3109,7 +3356,8 @@ export default function App() {
           )}
           {screen === "all-work-orders" && (
             <AllWorkOrdersPage
-            onBack={() => {
+              accountKey={localAccountKey ?? ""}
+              onBack={() => {
               setScreen("orders");
               setMainTab("more");
             }}
@@ -3154,6 +3402,24 @@ export default function App() {
               setScreen("orders");
               setMainTab("more");
             }}
+            />
+          )}
+          {screen === "signature-management" && (
+            <SignatureManagementPage
+            accountKey={localAccountKey}
+            onSignatureChange={updateSignedOrderState}
+            onBack={() => {
+              setScreen("orders");
+              setMainTab("more");
+            }}
+            />
+          )}
+          {screen === "signature" && signatureOrder && (
+            <SignaturePage
+            accountKey={localAccountKey}
+            order={signatureOrder}
+            onSignatureChange={updateSignedOrderState}
+            onBack={returnFromSignature}
             />
           )}
           {screen === "settings" && (
@@ -3506,6 +3772,8 @@ export default function App() {
                 }
               }
             }}
+            signatureSaved={Boolean(activeOrder && signedOrderHeaderIds.includes(activeOrder.woHeaderId))}
+            onOpenSignature={openSignatureFromDetail}
             onClose={() => {
               setDrawer(null);
               setLocalDetailOrder(null);

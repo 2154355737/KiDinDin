@@ -419,6 +419,67 @@
   margin-top: 1px;
 }
 
+.settings-overlay-group h3 {
+  margin-bottom: 2px;
+}
+
+.settings-overlay-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding-top: 7px;
+  border-top: 1px solid #edf1f5;
+}
+
+.settings-overlay-status > span {
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #eef2f7;
+  color: #718096;
+  font-size: 8px;
+  font-weight: 750;
+}
+
+.settings-overlay-status > span.ready {
+  background: #e8f7ef;
+  color: #327252;
+}
+
+.settings-overlay-status > span.pending {
+  background: #fff4df;
+  color: #9b651b;
+}
+
+.settings-overlay-status small {
+  flex-basis: 100%;
+  color: #8794a6;
+  font-size: 8px;
+  line-height: 1.4;
+}
+
+.settings-overlay-accessibility {
+  width: 100%;
+  min-height: 34px;
+  margin-top: 8px;
+  border: 1px solid #dbe5f0;
+  border-radius: 10px;
+  background: #f7faff;
+  color: #2466ae;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.settings-overlay-accessibility:disabled {
+  color: #4c8066;
+  background: #edf8f2;
+  opacity: 1;
+}
+
 .settings-storage-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -641,4 +702,33 @@
 .theme-dark .settings-safety-rule {
   background: #173328;
   color: #8fd4b0;
+}
+
+.theme-dark .settings-overlay-status {
+  border-color: #29374b;
+}
+
+.theme-dark .settings-overlay-status > span {
+  background: #111827;
+}
+
+.theme-dark .settings-overlay-status > span.ready {
+  background: #173328;
+  color: #8fd4b0;
+}
+
+.theme-dark .settings-overlay-status > span.pending {
+  background: #392d17;
+  color: #efc274;
+}
+
+.theme-dark .settings-overlay-accessibility {
+  border-color: #33465d;
+  background: #172537;
+  color: #8cc3ff;
+}
+
+.theme-dark .settings-overlay-accessibility:disabled {
+  background: #173127;
+  color: #83c4a2;
 }

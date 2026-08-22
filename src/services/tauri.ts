@@ -18,6 +18,52 @@ export type DeviceIdentityPreview = {
   referer: string;
 };
 
+export type FloatingOverlayStatus = {
+  supported: boolean;
+  permissionGranted: boolean;
+  enabled: boolean;
+  visible: boolean;
+  accessibilitySupported: boolean;
+  accessibilityEnabled: boolean;
+  recognition: WorkOrderRecognitionTarget;
+};
+
+export type WorkOrderRecognitionTarget = {
+  pending: boolean;
+  state: string;
+  message: string;
+  logs: string;
+  recognizedAt: number;
+  accountKey: string;
+  woHeaderId: string;
+  woNumber: string;
+  resident: string;
+  contactPhone: string;
+  address: string;
+  sourceDate: string;
+  securityDate: string;
+  prefilled: boolean;
+  prefilledAt: number;
+  rawJson: string;
+};
+
+export type WorkOrderIndexEntry = {
+  woHeaderId: string;
+  woNumber: string;
+  resident: string;
+  contactPhone: string;
+  address: string;
+  eligiblePrefill: boolean;
+  rawJson: string;
+};
+
+export type WorkOrderIndexSyncResult = {
+  indexed: number;
+  inserted: number;
+  updated: number;
+  total: number;
+};
+
 export type NativeUploadFile = {
   name: string;
   mime?: string;
@@ -176,4 +222,68 @@ export function fetchDeviceIdentityPreview() {
 
 export function fetchIsMobileRuntime() {
   return nativeInvoke<boolean>("is_mobile_runtime");
+}
+
+export function fetchFloatingOverlayStatus() {
+  return nativeInvoke<FloatingOverlayStatus>("floating_overlay_status");
+}
+
+export function requestFloatingOverlayPermission() {
+  return nativeInvoke<FloatingOverlayStatus>(
+    "floating_overlay_request_permission",
+  );
+}
+
+export function showFloatingOverlay() {
+  return nativeInvoke<FloatingOverlayStatus>("floating_overlay_show");
+}
+
+export function hideFloatingOverlay() {
+  return nativeInvoke<FloatingOverlayStatus>("floating_overlay_hide");
+}
+
+export function openWorkOrderRecognitionAccessibilitySettings() {
+  return nativeInvoke<FloatingOverlayStatus>(
+    "floating_overlay_open_accessibility_settings",
+  );
+}
+
+export function syncNativeWorkOrderIndex(
+  accountKey: string,
+  sourceDate: string,
+  entries: WorkOrderIndexEntry[],
+) {
+  return nativeInvoke<WorkOrderIndexSyncResult>("work_order_index_sync", {
+    accountKey,
+    sourceDate,
+    entries,
+  });
+}
+
+export function consumePendingPrefillTarget() {
+  return nativeInvoke<WorkOrderRecognitionTarget | { pending: false }>(
+    "consume_pending_prefill_target",
+  );
+}
+
+export function reportNativeWorkOrderPrefill(
+  woHeaderId: string,
+  state: "prefill_running" | "prefill_success" | "prefill_error",
+  message: string,
+) {
+  return nativeInvoke<WorkOrderRecognitionTarget>("report_work_order_prefill", {
+    woHeaderId,
+    state,
+    message,
+  });
+}
+
+export function reportNativeWorkOrderSecurityDate(
+  woHeaderId: string,
+  securityDate: string,
+) {
+  return nativeInvoke<WorkOrderRecognitionTarget>(
+    "report_work_order_security_date",
+    { woHeaderId, securityDate },
+  );
 }

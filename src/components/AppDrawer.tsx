@@ -315,6 +315,8 @@ export function AppDrawer({
   onSaveRefreshToken,
   onExportSession,
   onStorefrontPrefillChange,
+  signatureSaved,
+  onOpenSignature,
   onClose,
   onLogout,
 }: {
@@ -344,6 +346,8 @@ export function AppDrawer({
     password?: string;
   }) => Promise<string>;
   onStorefrontPrefillChange: (woHeaderId: string, saved: boolean) => void;
+  signatureSaved: boolean;
+  onOpenSignature: (order: WorkOrder) => void;
   onClose: () => void;
   onLogout: () => void;
 }) {
@@ -938,6 +942,24 @@ export function AppDrawer({
             </section>
             <section className="detail-quick-actions">
               <h3>快捷操作</h3>
+              <button
+                type="button"
+                className="signature-quick-action"
+                onClick={() => onOpenSignature(order)}
+              >
+                <span className="detail-quick-action-icon">
+                  <Icon name="signature" size={18} />
+                </span>
+                <span>
+                  <b>工单签字</b>
+                  <small>
+                    {signatureSaved
+                      ? "本机已有签字记录，可查看或重新签字"
+                      : "手写姓名并保存为本地离线工单记录"}
+                  </small>
+                </span>
+                <Icon name={signatureSaved ? "check" : "chevron"} size={16} />
+              </button>
               <button
                 type="button"
                 disabled={

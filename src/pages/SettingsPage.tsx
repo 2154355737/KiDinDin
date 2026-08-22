@@ -23,7 +23,15 @@ import {
   themeModeOptions,
   themeOptions,
 } from "../services/theme";
-import { isNativeRuntime } from "../services/tauri";
+import {
+  fetchFloatingOverlayStatus,
+  hideFloatingOverlay,
+  isNativeRuntime,
+  openWorkOrderRecognitionAccessibilitySettings,
+  requestFloatingOverlayPermission,
+  showFloatingOverlay,
+  type FloatingOverlayStatus,
+} from "../services/tauri";
 import type { AppearanceSettings } from "../types/workOrder";
 
 type SettingsPageProps = {
@@ -147,6 +155,9 @@ export function SettingsPage({
     usage: null,
   });
   const [message, setMessage] = useState("");
+  const [overlayBusy, setOverlayBusy] = useState(false);
+  const [overlayStatus, setOverlayStatus] =
+    useState<FloatingOverlayStatus | null>(null);
 
   const refreshStorage = async () => {
     const estimate = await navigator.storage?.estimate?.().catch(() => null);
@@ -160,6 +171,22 @@ export function SettingsPage({
   useEffect(() => {
     void refreshStorage();
   }, [localWorkOrderCount, appSettings, appearanceSettings]);
+
+  useEffect(() => {
+    if (!isNativeRuntime()) return;
+    const refreshOverlay = () => {
+      void fetchFloatingOverlayStatus()
+        .then(setOverlayStatus)
+        .catch(() => setOverlayStatus(null));
+    };
+    refreshOverlay();
+    window.addEventListener("focus", refreshOverlay);
+    document.addEventListener("visibilitychange", refreshOverlay);
+    return () => {
+      window.removeEventListener("focus", refreshOverlay);
+      document.removeEventListener("visibilitychange", refreshOverlay);
+    };
+  }, []);
 
   const handleSettingsImport = async (event: ChangeEvent<HTMLInputElement>) => {
     const input = event.currentTarget;
@@ -206,6 +233,55 @@ export function SettingsPage({
       ...current,
       vacantRoom: { ...current.vacantRoom, ...patch },
     }));
+
+  const toggleFloatingOverlay = async () => {
+    if (overlayBusy) return;
+    setOverlayBusy(true);
+    try {
+      let current = overlayStatus ?? await fetchFloatingOverlayStatus();
+      setOverlayStatus(current);
+      if (!current.supported) {
+        setMessage("跨应用悬浮窗仅支持 Android APK");
+        return;
+      }
+      if (current.visible || current.enabled) {
+        current = await hideFloatingOverlay();
+        setOverlayStatus(current);
+        setMessage("悬浮窗已关闭");
+        return;
+      }
+      if (!current.permissionGranted) {
+        await requestFloatingOverlayPermission();
+        setMessage("请在系统页面允许 KiDinDin 显示在其他应用上层，返回后再开启悬浮窗");
+        return;
+      }
+      await showFloatingOverlay();
+      setOverlayStatus({ ...current, enabled: true, visible: true });
+      window.setTimeout(() => {
+        void fetchFloatingOverlayStatus()
+          .then(setOverlayStatus)
+          .catch(() => undefined);
+      }, 250);
+      setMessage("悬浮窗已开启；切到钉钉小程序后仍会显示");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "悬浮窗操作失败");
+    } finally {
+      setOverlayBusy(false);
+    }
+  };
+
+  const openRecognitionAccessibility = async () => {
+    if (overlayBusy) return;
+    setOverlayBusy(true);
+    try {
+      await openWorkOrderRecognitionAccessibilitySettings();
+      setMessage("请在系统辅助功能中启用“KiDinDin 工单识别”，返回后会自动刷新状态");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "无法打开辅助功能设置");
+    } finally {
+      setOverlayBusy(false);
+    }
+  };
 
   return (
     <>
@@ -334,7 +410,43 @@ export function SettingsPage({
       <section className="settings-page-section" id="behavior">
         <div className="settings-page-heading">
           <span className="settings-section-icon"><Icon name="tasks" size={18} /></span>
-          <span><h2>空房工具</h2><p>控制打开页面时的默认勾选和逐单预存节奏。</p></span>
+          <span><h2>操作与悬浮工具</h2><p>控制跨应用入口、默认勾选和逐单预存节奏。</p></span>
+        </div>
+        <div className="settings-page-group settings-overlay-group">
+          <h3>钉钉小程序辅助入口</h3>
+          <SettingsSwitch
+            checked={Boolean(overlayStatus?.visible || overlayStatus?.enabled)}
+            label="跨应用悬浮窗"
+            description={
+              overlayStatus?.permissionGranted
+                ? "切到钉钉后保持显示；点击悬浮球可返回当前 KiDinDin 页面。"
+                : "首次开启需要在 Android 系统页面授予显示在其他应用上层权限。"
+            }
+            onChange={() => void toggleFloatingOverlay()}
+          />
+          <div className="settings-overlay-status" aria-live="polite">
+            <span className={overlayStatus?.permissionGranted ? "ready" : "pending"}>
+              {overlayStatus?.permissionGranted ? "已授权" : "待授权"}
+            </span>
+            <span className={overlayStatus?.visible ? "ready" : "idle"}>
+              {overlayBusy ? "处理中" : overlayStatus?.visible ? "显示中" : "未显示"}
+            </span>
+            <span className={overlayStatus?.accessibilityEnabled ? "ready" : "pending"}>
+              {overlayStatus?.accessibilityEnabled ? "工单识别已开启" : "工单识别待开启"}
+            </span>
+            <small>
+              {overlayStatus?.recognition?.message || "仅在点击悬浮窗“识别当前工单”后执行一次本地 OCR；截图不保存、不上传，匹配不唯一时不会执行预填。"}
+            </small>
+          </div>
+          <button
+            type="button"
+            className="settings-overlay-accessibility"
+            disabled={overlayBusy || overlayStatus?.accessibilityEnabled}
+            onClick={() => void openRecognitionAccessibility()}
+          >
+            <Icon name="scan" size={15} />
+            {overlayStatus?.accessibilityEnabled ? "工单识别辅助功能已启用" : "开启工单识别辅助功能"}
+          </button>
         </div>
         <div className="settings-page-group">
           <label className="settings-text-row">

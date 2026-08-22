@@ -196,6 +196,7 @@ export function WorkOrderList({
   selected = [],
   selectionDisabled = false,
   storefrontPrefilledOrderHeaderIds = [],
+  signedOrderHeaderIds = [],
   localMetaById = {},
   groupByFloor = false,
   floorGroupingResetKey,
@@ -213,6 +214,7 @@ export function WorkOrderList({
   selected?: string[];
   selectionDisabled?: boolean;
   storefrontPrefilledOrderHeaderIds?: readonly string[];
+  signedOrderHeaderIds?: readonly string[];
   localMetaById?: Record<string, LocalWorkOrderMeta>;
   groupByFloor?: boolean;
   floorGroupingResetKey?: string;
@@ -234,6 +236,10 @@ export function WorkOrderList({
   const storefrontPrefilledIds = useMemo(
     () => new Set(storefrontPrefilledOrderHeaderIds),
     [storefrontPrefilledOrderHeaderIds],
+  );
+  const signedIds = useMemo(
+    () => new Set(signedOrderHeaderIds),
+    [signedOrderHeaderIds],
   );
   const orderSequence = useMemo(
     () => orders.map(orderMotionKey).join("|"),
@@ -720,6 +726,7 @@ export function WorkOrderList({
     const localMeta = localMetaById[order.woHeaderId];
     const isSelected = selectedIds.has(order.id);
     const isStorefrontPrefilled = storefrontPrefilledIds.has(order.woHeaderId);
+    const isSigned = signedIds.has(order.woHeaderId);
     const isSwipeRow = swipeVisual.orderKey === orderKey;
     const swipeOffset = isSwipeRow ? swipeVisual.offsetX : 0;
     const swipePhase = isSwipeRow ? swipeVisual.phase : "idle";
@@ -868,6 +875,12 @@ export function WorkOrderList({
                 )}
               </span>
               <span className="order-status-cluster">
+                {isSigned ? (
+                  <span className="signed-order-badge" title="本机已保存签字记录">
+                    <Icon name="signature" size={10} />
+                    已签字
+                  </span>
+                ) : null}
                 {isStorefrontPrefilled ? (
                   <span
                     className="storefront-prefill-badge"

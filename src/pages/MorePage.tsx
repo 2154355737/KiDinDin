@@ -17,6 +17,7 @@ export type MorePageProps = {
   onOpenSettings: () => void;
   onOpenVisitVerify: () => void;
   onOpenImageEncoding: () => void;
+  onOpenSignatureManagement: () => void;
   showToolDescriptions?: boolean;
   onExportLocalData: () => void | Promise<void>;
   onImportLocalData: (json: string, fileName: string) => void | Promise<void>;
@@ -38,6 +39,7 @@ export function MorePage({
   onOpenSettings,
   onOpenVisitVerify,
   onOpenImageEncoding,
+  onOpenSignatureManagement,
   showToolDescriptions = true,
   onExportLocalData,
   onImportLocalData,
@@ -130,6 +132,11 @@ export function MorePage({
         <button type="button" className="more-feature-card" onClick={onOpenImageEncoding}>
           <span className="more-feature-icon"><Icon name="database" size={20} /></span>
           <span className="more-feature-copy"><b>图片编码记录</b><small>查看编码使用状态与本地预览</small></span>
+          <Icon name="chevron" size={17} />
+        </button>
+        <button type="button" className="more-feature-card" onClick={onOpenSignatureManagement}>
+          <span className="more-feature-icon"><Icon name="signature" size={20} /></span>
+          <span className="more-feature-copy"><b>签字管理</b><small>查看和管理本机工单签字记录</small></span>
           <Icon name="chevron" size={17} />
         </button>
         <button type="button" className="more-feature-card" onClick={onOpenSettings}>
