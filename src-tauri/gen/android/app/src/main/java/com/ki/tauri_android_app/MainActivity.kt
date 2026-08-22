@@ -8,8 +8,14 @@ import androidx.activity.enableEdgeToEdge
 
 class MainActivity : TauriActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
+    setTheme(R.style.Theme_tauri_android_app)
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+      splashScreen.setOnExitAnimationListener { splashView ->
+        splashView.remove()
+      }
+    }
     BackgroundKeepAliveService.start(this)
     requestNotificationPermission()
   }
