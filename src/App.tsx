@@ -78,6 +78,7 @@ import {
   loadAppSettings,
   type AppSettings,
 } from "./services/appSettings";
+import { saveUtf8JsonFile } from "./services/fullBackup";
 import {
   getStorefrontPhotoPrefillHeaderIds,
   getStorefrontPhotoPrefills,
@@ -173,6 +174,11 @@ const VisitVerifyPage = lazy(() =>
 const SettingsPage = lazy(() =>
   import("./pages/SettingsPage").then((module) => ({
     default: module.SettingsPage,
+  })),
+);
+const BackupRestorePage = lazy(() =>
+  import("./pages/BackupRestorePage").then((module) => ({
+    default: module.BackupRestorePage,
   })),
 );
 const StatsPage = lazy(() =>
@@ -630,19 +636,6 @@ function fromLocalMeta(item: LocalWorkOrderMeta): WorkOrder {
     woHeaderId: item.woHeaderId,
     woNumber: snapshot.woNumber,
   };
-}
-
-function downloadJsonFile(fileName: string, payload: string) {
-  const url = URL.createObjectURL(
-    new Blob([payload], { type: "application/json;charset=utf-8" }),
-  );
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
 }
 
 function messageOf(error: unknown) {
@@ -2046,8 +2039,15 @@ export default function App() {
     setLocalDataMessage("");
     try {
       const payload = await exportLocalWorkOrderMeta(accountKey);
-      downloadJsonFile(`kidindin-local-work-orders-${today()}.json`, payload);
-      setLocalDataMessage(`已导出 ${localWorkOrders.length} 条本地工单资料`);
+      const saved = await saveUtf8JsonFile(
+        `kidindin-local-work-orders-${today()}.json`,
+        payload,
+      );
+      setLocalDataMessage(
+        saved.method === "native"
+          ? `已写入 ${localWorkOrders.length} 条本地工单资料到 ${saved.destination}：${saved.fileName}`
+          : `已发起浏览器下载：${saved.fileName}（${localWorkOrders.length} 条本地工单资料）`,
+      );
     } catch (error) {
       setLocalDataMessage(`导出失败：${messageOf(error)}`);
     } finally {
@@ -3083,6 +3083,10 @@ export default function App() {
         setScreen("orders");
         setMainTab(settingsReturnTabRef.current);
         return;
+      case "backup-restore":
+        setScreen("orders");
+        setMainTab("more");
+        return;
       case "running":
         if (!running) setScreen("records");
         return;
@@ -3328,6 +3332,7 @@ export default function App() {
             }}
             onOpenSaved={() => setScreen("local-orders")}
             onOpenAppointments={() => setScreen("appointments")}
+            onOpenBackupRestore={() => setScreen("backup-restore")}
             onOpenSettings={() => {
               settingsReturnTabRef.current = "more";
               setScreen("settings");
@@ -3439,9 +3444,20 @@ export default function App() {
               setMainTab(settingsReturnTabRef.current);
             }}
             onOpenQuickConfig={() => setDrawer("settings")}
+            onOpenBackupRestore={() => setScreen("backup-restore")}
             onExportLocalData={exportLocalData}
             onImportLocalData={importLocalData}
             onClearLocalData={clearLocalData}
+            />
+          )}
+          {screen === "backup-restore" && (
+            <BackupRestorePage
+              accountKey={localAccountKey}
+              accountLabel={auth!.username ?? auth!.employeeNumber ?? "当前账号"}
+              onBack={() => {
+                setScreen("orders");
+                setMainTab("more");
+              }}
             />
           )}
           {screen === "local-orders" && (

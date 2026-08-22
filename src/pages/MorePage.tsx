@@ -14,6 +14,7 @@ export type MorePageProps = {
   onOpenLogAudit: () => void;
   onOpenSaved: () => void;
   onOpenAppointments: () => void;
+  onOpenBackupRestore: () => void;
   onOpenSettings: () => void;
   onOpenVisitVerify: () => void;
   onOpenImageEncoding: () => void;
@@ -36,6 +37,7 @@ export function MorePage({
   onOpenLogAudit,
   onOpenSaved,
   onOpenAppointments,
+  onOpenBackupRestore,
   onOpenSettings,
   onOpenVisitVerify,
   onOpenImageEncoding,
@@ -139,25 +141,30 @@ export function MorePage({
           <span className="more-feature-copy"><b>签字管理</b><small>查看和管理本机工单签字记录</small></span>
           <Icon name="chevron" size={17} />
         </button>
+        <button type="button" className="more-feature-card" onClick={onOpenBackupRestore}>
+          <span className="more-feature-icon"><Icon name="database" size={20} /></span>
+          <span className="more-feature-copy"><b>备份与恢复</b><small>流式备份数 GB 图片、WebDB 与 SQLite</small></span>
+          <Icon name="chevron" size={17} />
+        </button>
         <button type="button" className="more-feature-card" onClick={onOpenSettings}>
           <span className="more-feature-icon"><Icon name="settings" size={20} /></span>
-          <span className="more-feature-copy"><b>完整设置</b><small>外观、工具、存储与高级配置</small></span>
+          <span className="more-feature-copy"><b>完整设置</b><small>外观、工具偏好与高级配置</small></span>
           <Icon name="chevron" size={17} />
         </button>
       </div>
     </section>
 
     <section className="more-page-section local-data-section">
-      <div className="more-section-heading"><h2>本地数据</h2></div>
+      <div className="more-section-heading"><h2>当前账号工单资料</h2></div>
       <div className="local-data-actions">
         <button type="button" disabled={busy} onClick={() => void onExportLocalData()}>
-          <Icon name="download" size={18} /><span><b>导出数据</b></span>
+          <Icon name="download" size={18} /><span><b>导出工单</b></span>
         </button>
         <button type="button" disabled={busy} onClick={() => importInput.current?.click()}>
-          <Icon name="upload" size={18} /><span><b>导入数据</b></span>
+          <Icon name="upload" size={18} /><span><b>导入工单</b></span>
         </button>
         <button type="button" className="local-data-clear" disabled={busy || items.length === 0} onClick={() => void onClearLocalData()}>
-          <Icon name="trash" size={18} /><span><b>清空数据</b></span>
+          <Icon name="trash" size={18} /><span><b>清空工单</b></span>
         </button>
       </div>
       <input ref={importInput} className="local-data-file-input" type="file" accept="application/json,.json" hidden onChange={(event) => void handleImport(event)} />

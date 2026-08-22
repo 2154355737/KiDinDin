@@ -5,6 +5,7 @@ use serde_json::Value;
 use std::{fs, path::PathBuf, sync::Mutex, time::{SystemTime, UNIX_EPOCH}};
 use tauri::{AppHandle, Manager, State};
 use uuid::Uuid;
+mod backup;
 mod vacant_room;
 mod img_augment;
 mod floating_overlay;
@@ -589,6 +590,7 @@ async fn cis_upload_files(
 pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(backup::init())
         .plugin(floating_overlay::init())
         .plugin(vacant_room::init());
     #[cfg(mobile)]
@@ -618,6 +620,14 @@ pub fn run() {
             floating_overlay::consume_pending_prefill_target,
             floating_overlay::report_work_order_prefill,
             floating_overlay::report_work_order_security_date,
+            backup::native_database_export,
+            backup::native_database_import,
+            backup::native_database_validate,
+            backup::save_backup_file,
+            backup::begin_large_backup,
+            backup::append_large_backup,
+            backup::finish_large_backup,
+            backup::abort_large_backup,
             cis_download_file,
             vacant_room::cis_cache_vacant_room_image,
             vacant_room::clear_vacant_room_image_cache,

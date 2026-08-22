@@ -657,5 +657,49 @@ class BackgroundKeepAliveService : Service() {
     fun isOverlayEnabled(context: Context): Boolean =
       context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         .getBoolean(PREF_OVERLAY_ENABLED, false)
+
+    fun restoreOverlayEnabled(context: Context, enabled: Boolean) {
+      val applicationContext = context.applicationContext
+      persistOverlayEnabled(applicationContext, enabled)
+
+      // Runtime overlay state is best-effort and separate from preference durability.
+      // In particular, missing overlay permission must not turn a completed restore
+      // into a false storage failure.
+      synchronizeOverlayEnabled(applicationContext, enabled)
+    }
+
+    fun persistOverlayEnabled(context: Context, enabled: Boolean) {
+      val stored = context.applicationContext
+        .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .edit()
+        .putBoolean(PREF_OVERLAY_ENABLED, enabled)
+        .commit()
+      if (!stored) throw IllegalStateException("无法恢复悬浮窗启用偏好")
+    }
+
+    fun synchronizeOverlayEnabled(context: Context, enabled: Boolean) {
+      val service = currentService
+      if (service != null) {
+        val synchronize = Runnable {
+          runCatching {
+            if (enabled && Settings.canDrawOverlays(service)) {
+              service.showOverlay()
+            } else {
+              service.hideOverlay(persist = false)
+            }
+          }
+        }
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+          synchronize.run()
+        } else {
+          Handler(Looper.getMainLooper()).post(synchronize)
+        }
+        return
+      }
+
+      if (enabled && Settings.canDrawOverlays(context)) {
+        runCatching { showOverlay(context) }
+      }
+    }
   }
 }

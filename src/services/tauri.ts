@@ -70,6 +70,63 @@ export type NativeUploadFile = {
   base64: string;
 };
 
+export type NativeDatabaseBackupResult = {
+  backup?: unknown;
+  databaseName?: string;
+  prefillHistoryCount?: number;
+  supported: boolean;
+  workOrderCount?: number;
+};
+
+export type NativeDatabaseImportResult = {
+  prefillHistoryImported?: number;
+  prefillHistoryTotal?: number;
+  supported: boolean;
+  workOrderTotal?: number;
+  workOrdersImported?: number;
+};
+
+export type NativeDatabaseValidationResult = {
+  prefillHistoryCount?: number;
+  supported: boolean;
+  valid: boolean;
+  workOrderCount?: number;
+};
+
+export type NativeBackupFileResult = {
+  destination?: string;
+  error?: string;
+  fileName?: string;
+  sha256?: string;
+  size?: number;
+  supported: boolean;
+  uri?: string;
+};
+
+export type NativeLargeBackupBeginResult = {
+  error?: string;
+  fileName?: string;
+  sessionId?: string;
+  supported: boolean;
+};
+
+export type NativeLargeBackupAppendResult = {
+  appendedSize?: number;
+  error?: string;
+  sessionId?: string;
+  size?: number;
+  supported: boolean;
+};
+
+export type NativeLargeBackupAbortResult = {
+  aborted?: boolean;
+  error?: string;
+  sessionId?: string;
+  supported: boolean;
+};
+
+export const LARGE_BACKUP_CHUNK_CHARACTER_LIMIT = 4 * 1024 * 1024;
+
 type TauriInternals = {
   invoke: <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
 };
@@ -257,6 +314,98 @@ export function syncNativeWorkOrderIndex(
     accountKey,
     sourceDate,
     entries,
+  });
+}
+
+export function exportNativeDatabaseBackup() {
+  if (!isNativeRuntime()) {
+    return Promise.resolve({ supported: false } satisfies NativeDatabaseBackupResult);
+  }
+  return nativeInvoke<NativeDatabaseBackupResult>("native_database_export");
+}
+
+export function importNativeDatabaseBackup(payload: string) {
+  if (!isNativeRuntime()) {
+    return Promise.resolve({ supported: false } satisfies NativeDatabaseImportResult);
+  }
+  return nativeInvoke<NativeDatabaseImportResult>("native_database_import", { payload });
+}
+
+export function validateNativeDatabaseBackup(payload: string) {
+  if (!isNativeRuntime()) {
+    return Promise.resolve({ supported: false, valid: false } satisfies NativeDatabaseValidationResult);
+  }
+  return nativeInvoke<NativeDatabaseValidationResult>("native_database_validate", { payload });
+}
+
+export function saveNativeBackupFile(fileName: string, payload: string) {
+  return nativeInvoke<NativeBackupFileResult>("save_backup_file", {
+    fileName,
+    payload,
+  });
+}
+
+export function beginLargeBackupFile(fileName: string) {
+  if (!isNativeRuntime()) {
+    return Promise.resolve({
+      error: "当前平台不支持大型备份文件流式写入",
+      supported: false,
+    } satisfies NativeLargeBackupBeginResult);
+  }
+  return nativeInvoke<NativeLargeBackupBeginResult>("begin_large_backup", {
+    fileName,
+  });
+}
+
+export function appendLargeBackupFile(sessionId: string, chunk: string) {
+  if (chunk.length > LARGE_BACKUP_CHUNK_CHARACTER_LIMIT) {
+    return Promise.reject(new Error("大型备份单次追加不能超过 4MiB 字符"));
+  }
+  if (!isNativeRuntime()) {
+    return Promise.resolve({
+      error: "当前平台不支持大型备份文件流式写入",
+      supported: false,
+    } satisfies NativeLargeBackupAppendResult);
+  }
+  return nativeInvoke<NativeLargeBackupAppendResult>("append_large_backup", {
+    chunk,
+    sessionId,
+  });
+}
+
+export function finishLargeBackupFile(
+  sessionId: string,
+  expectedSize: number,
+  expectedSha256: string,
+) {
+  if (!Number.isSafeInteger(expectedSize) || expectedSize < 0) {
+    return Promise.reject(new Error("大型备份预期大小必须是安全的非负整数"));
+  }
+  if (!/^[a-f0-9]{64}$/i.test(expectedSha256.trim())) {
+    return Promise.reject(new Error("大型备份预期 SHA-256 无效"));
+  }
+  if (!isNativeRuntime()) {
+    return Promise.resolve({
+      error: "当前平台不支持大型备份文件流式写入",
+      supported: false,
+    } satisfies NativeBackupFileResult);
+  }
+  return nativeInvoke<NativeBackupFileResult>("finish_large_backup", {
+    expectedSha256: expectedSha256.trim().toLowerCase(),
+    expectedSize,
+    sessionId,
+  });
+}
+
+export function abortLargeBackupFile(sessionId: string) {
+  if (!isNativeRuntime()) {
+    return Promise.resolve({
+      error: "当前平台不支持大型备份文件流式写入",
+      supported: false,
+    } satisfies NativeLargeBackupAbortResult);
+  }
+  return nativeInvoke<NativeLargeBackupAbortResult>("abort_large_backup", {
+    sessionId,
   });
 }
 
