@@ -187,6 +187,11 @@ const BackupRestorePage = lazy(() =>
     default: module.BackupRestorePage,
   })),
 );
+const StorageManagementPage = lazy(() =>
+  import("./pages/StorageManagementPage").then((module) => ({
+    default: module.StorageManagementPage,
+  })),
+);
 const StatsPage = lazy(() =>
   import("./pages/StatsPage").then((module) => ({
     default: module.StatsPage,
@@ -3429,6 +3434,7 @@ export default function App() {
             onOpenSaved={() => setScreen("local-orders")}
             onOpenAppointments={() => setScreen("appointments")}
             onOpenBackupRestore={() => setScreen("backup-restore")}
+            onOpenStorageManagement={() => setScreen("storage-management")}
             onOpenSettings={() => {
               settingsReturnTabRef.current = "more";
               setScreen("settings");
@@ -3567,6 +3573,25 @@ export default function App() {
             <BackupRestorePage
               accountKey={localAccountKey}
               accountLabel={auth!.username ?? auth!.employeeNumber ?? "当前账号"}
+              onBack={() => {
+                setScreen("orders");
+                setMainTab("more");
+              }}
+            />
+          )}
+          {screen === "storage-management" && (
+            <StorageManagementPage
+              accountKey={localAccountKey}
+              orders={orders}
+              onPrefillsCleared={(woHeaderIds) => {
+                const cleared = new Set(woHeaderIds);
+                setStorefrontPrefilledOrderHeaderIds((current) => current.filter((id) => !cleared.has(id)));
+                setResidentSecurityPrefilledOrderHeaderIds((current) => current.filter((id) => !cleared.has(id)));
+                setStorefrontPrefilledOrderIds((current) => current.filter((id) => {
+                  const order = orders.find((item) => item.id === id);
+                  return !order || !cleared.has(order.woHeaderId);
+                }));
+              }}
               onBack={() => {
                 setScreen("orders");
                 setMainTab("more");

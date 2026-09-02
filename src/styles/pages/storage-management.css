@@ -1,0 +1,21 @@
+.storage-management-page { min-height: 100%; padding-bottom: 20px; background: var(--color-background); }
+.storage-management-page .ant-card, .storage-management-page .ant-alert { margin: 0 16px 16px; border-radius: 14px; }
+.storage-management-page .ant-btn { min-height: 44px; border-radius: 11px; }
+.storage-hero { background: linear-gradient(135deg, var(--accent-soft), #fff) !important; }
+.storage-hero .ant-statistic-content { font-size: 30px; }
+.storage-hero p { margin: 6px 0 0; color: #6f7f96; font-size: 12px; }
+.storage-chart-wrap { min-height: 220px; }
+.storage-usage-list { display: grid; gap: 8px; margin-top: 8px; }
+.storage-usage-list > div { display: flex; justify-content: space-between; gap: 12px; color: #6f7f96; font-size: 12px; }
+.storage-usage-list b { color: #26364d; }
+.storage-reclaimable { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.storage-reclaimable > div { display: grid; gap: 3px; }
+.storage-reclaimable span, .storage-reclaimable small { color: #6f7f96; font-size: 12px; }
+.storage-reclaimable b { color: #26364d; font-size: 24px; }
+.theme-dark .storage-management-page { background: var(--dark-base); color: var(--dark-text); }
+.theme-dark .storage-management-page .ant-card, .theme-dark .storage-management-page .ant-alert { background: var(--dark-surface); border-color: var(--dark-border); color: var(--dark-text); }
+.theme-dark .storage-management-page .ant-card-head, .theme-dark .storage-management-page .ant-card-head-title, .theme-dark .storage-management-page .ant-statistic-content, .theme-dark .storage-management-page .ant-statistic-content-value, .theme-dark .storage-management-page .ant-alert-message, .theme-dark .storage-management-page .ant-alert-description { color: var(--dark-text) !important; border-color: var(--dark-border); }
+.theme-dark .storage-management-page .ant-statistic-title, .theme-dark .storage-management-page .storage-hero p, .theme-dark .storage-management-page .storage-usage-list > div, .theme-dark .storage-management-page .storage-reclaimable span, .theme-dark .storage-management-page .storage-reclaimable small { color: var(--dark-text-secondary) !important; }
+.theme-dark .storage-management-page .storage-usage-list b, .theme-dark .storage-management-page .storage-reclaimable b { color: var(--dark-text); }
+.theme-dark .storage-management-page .storage-hero { background: linear-gradient(135deg, var(--accent-dark-soft-strong), var(--dark-surface)) !important; }
+.theme-dark .storage-management-page .ant-btn-text { color: var(--dark-text); }

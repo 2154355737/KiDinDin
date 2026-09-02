@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { Alert, Badge, Button, Card, Collapse, Descriptions, Progress, Statistic } from "antd";
+import { DownloadOutlined, FileSearchOutlined, InboxOutlined, UploadOutlined } from "@ant-design/icons";
 import { Icon } from "../components/Icon";
 import {
   exportCompleteBackup,
@@ -79,22 +81,6 @@ function inspectionFormatLabel(format: BackupArchiveInspection["format"]) {
   return format === "archive" ? "新流式完整备份" : "旧版 JSON 完整备份";
 }
 
-function formatTime(timestamp: number | null): string {
-  if (!timestamp) return "从未备份";
-  const date = new Date(timestamp);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMs / 3600000);
-  const diffDays = Math.floor(diffMs / 86400000);
-
-  if (diffMins < 1) return "刚刚";
-  if (diffMins < 60) return `${diffMins} 分钟前`;
-  if (diffHours < 24) return `${diffHours} 小时前`;
-  if (diffDays < 30) return `${diffDays} 天前`;
-  return date.toLocaleDateString("zh-CN");
-}
-
 export function BackupRestorePage({ accountKey, accountLabel, onBack }: BackupRestorePageProps) {
   const importInput = useRef<HTMLInputElement>(null);
   const operationLock = useRef(false);
@@ -110,7 +96,6 @@ export function BackupRestorePage({ accountKey, accountLabel, onBack }: BackupRe
     text: "可导出全部本地数据，或选择新流式备份及旧版 JSON 完整备份进行检查。",
   });
   const [stats, setStats] = useState(backupHistoryStore.getStats());
-  const [showStats, setShowStats] = useState(false);
 
   useEffect(() => () => {
     mounted.current = false;
@@ -494,12 +479,8 @@ export function BackupRestorePage({ accountKey, accountLabel, onBack }: BackupRe
     (!inspection.nativeSqlitePresent || inspection.nativeSqliteCanRestore),
   );
 
-  const successRate = stats.totalBackups > 0
-    ? ((stats.successfulBackups / stats.totalBackups) * 100).toFixed(1)
-    : "0.0";
-
   return (
-    <>
+    <main className="backup-ant-page">
       <header className="topbar more-page-header">
         <button
           type="button"
@@ -516,58 +497,25 @@ export function BackupRestorePage({ accountKey, accountLabel, onBack }: BackupRe
         <div>
           <h1>备份与恢复</h1>
         </div>
-        <span
-          style={{
-            marginLeft: "auto",
-            padding: "4px 12px",
-            borderRadius: "12px",
-            fontSize: "12px",
-            fontWeight: 600,
-            background: busy ? "var(--color-warning-light)" : "var(--color-success-light)",
-            color: busy ? "var(--color-warning)" : "var(--color-success)",
-          }}
-        >
-          {busy ? "处理中" : "就绪"}
-        </span>
+        <Badge status={busy ? "processing" : "success"} text={busy ? "处理中" : "就绪"} />
       </header>
 
-      {/* 当前账号卡片 */}
-      <section className="more-page-summary" style={{ gridTemplateColumns: "1fr", margin: "16px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "12px", padding: "4px 0" }}>
-          <Icon name="database" size={24} />
-          <div style={{ flex: 1 }}>
-            <span style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>当前账号</span>
-            <b style={{ display: "block", fontSize: "15px", marginTop: "2px" }}>{accountLabel || "未命名账号"}</b>
-            <code style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>{accountKey ?? "缺少本地账号标识"}</code>
-          </div>
-        </div>
-      </section>
+      <Card className="backup-ant-account" size="small">
+        <Descriptions size="small" column={1} colon={false} items={[
+          { key: "account", label: "当前账号", children: accountLabel || "未命名账号" },
+          { key: "key", label: "账号标识", children: <code>{accountKey ?? "未找到本地标识"}</code> },
+        ]} />
+      </Card>
 
-      {/* 主要操作卡片 */}
-      <section className="more-page-section">
+      <section className="more-page-section backup-ant-section">
         <div className="more-section-heading"><h2>备份操作</h2></div>
-        <div className="more-tool-grid">
-          <button type="button" className="more-feature-card" disabled={busy} onClick={() => void handleExport()}>
-            <span className="more-feature-icon" style={{ background: "var(--color-primary-light)", color: "var(--color-primary)" }}>
-              <Icon name="download" size={21} />
-            </span>
-            <span className="more-feature-copy">
-              <b>{activeOperation === "export" ? "正在导出备份…" : "导出完整备份"}</b>
-              <small>导出 WebDB、图片、签字、应用偏好及 SQLite</small>
-            </span>
-            <Icon name="chevron" size={18} />
-          </button>
-
-          <button type="button" className="more-feature-card" disabled={busy} onClick={() => importInput.current?.click()}>
-            <span className="more-feature-icon" style={{ background: "var(--color-success-light)", color: "var(--color-success)" }}>
-              <Icon name="upload" size={21} />
-            </span>
-            <span className="more-feature-copy">
-              <b>{activeOperation === "inspect" ? "正在检查备份…" : "选择备份文件"}</b>
-              <small>支持新流式备份和旧版 JSON 完整备份</small>
-            </span>
-            <Icon name="chevron" size={18} />
-          </button>
+        <div className="backup-ant-actions">
+          <Button type="primary" size="large" block icon={<DownloadOutlined />} disabled={busy} onClick={() => void handleExport()}>
+            {activeOperation === "export" ? "正在导出…" : "导出备份"}
+          </Button>
+          <Button size="large" block icon={<UploadOutlined />} disabled={busy} onClick={() => importInput.current?.click()}>
+            {activeOperation === "inspect" ? "正在检查…" : "导入备份"}
+          </Button>
           <input
             ref={importInput}
             hidden
@@ -579,339 +527,41 @@ export function BackupRestorePage({ accountKey, accountLabel, onBack }: BackupRe
         </div>
       </section>
 
-      {/* 统计信息 */}
       {stats.totalBackups > 0 && (
-        <section className="more-page-section">
-          <div className="more-section-heading" style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            paddingRight: "16px",
-          }}>
-            <h2>备份统计</h2>
-            <button
-              type="button"
-              onClick={() => setShowStats(!showStats)}
-              style={{
-                padding: "6px 12px",
-                background: "transparent",
-                border: "1px solid var(--color-border)",
-                borderRadius: "8px",
-                fontSize: "12px",
-                fontWeight: 600,
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-                color: "var(--color-text-secondary)",
-              }}
-            >
-              {showStats ? "收起" : "展开"}
-              <Icon name={showStats ? "chevron-up" : "chevron-down"} size={14} />
-            </button>
+        <Card className="backup-ant-stats" title="备份统计" size="small">
+          <div className="backup-ant-stat-grid">
+            <Statistic title="备份" value={stats.totalBackups} />
+            <Statistic title="成功率" value={stats.successfulBackups / stats.totalBackups * 100} precision={1} suffix="%" />
+            <Statistic title="数据量" value={formatBytes(stats.totalDataSize)} />
           </div>
-
-          {/* 主要统计 - 始终显示 */}
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(3, 1fr)",
-            gap: "10px",
-            padding: "0 16px 16px",
-          }}>
-            <div style={{
-              padding: "14px",
-              background: "var(--color-surface)",
-              borderRadius: "10px",
-              textAlign: "center",
-            }}>
-              <div style={{
-                fontSize: "24px",
-                fontWeight: 700,
-                color: "var(--color-primary)",
-                marginBottom: "4px",
-              }}>
-                {stats.totalBackups}
-              </div>
-              <div style={{
-                fontSize: "11px",
-                color: "var(--color-text-secondary)",
-                textTransform: "uppercase",
-                letterSpacing: "0.5px",
-              }}>
-                总备份数
-              </div>
-            </div>
-
-            <div style={{
-              padding: "14px",
-              background: "var(--color-surface)",
-              borderRadius: "10px",
-              textAlign: "center",
-            }}>
-              <div style={{
-                fontSize: "24px",
-                fontWeight: 700,
-                color: "var(--color-success)",
-                marginBottom: "4px",
-              }}>
-                {successRate}%
-              </div>
-              <div style={{
-                fontSize: "11px",
-                color: "var(--color-text-secondary)",
-                textTransform: "uppercase",
-                letterSpacing: "0.5px",
-              }}>
-                成功率
-              </div>
-            </div>
-
-            <div style={{
-              padding: "14px",
-              background: "var(--color-surface)",
-              borderRadius: "10px",
-              textAlign: "center",
-            }}>
-              <div style={{
-                fontSize: "24px",
-                fontWeight: 700,
-                color: "var(--color-text)",
-                marginBottom: "4px",
-              }}>
-                {formatBytes(stats.totalDataSize)}
-              </div>
-              <div style={{
-                fontSize: "11px",
-                color: "var(--color-text-secondary)",
-                textTransform: "uppercase",
-                letterSpacing: "0.5px",
-              }}>
-                总数据量
-              </div>
-            </div>
-          </div>
-
-          {/* 详细统计 - 展开时显示 */}
-          {showStats && (
-            <div style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(2, 1fr)",
-              gap: "10px",
-              padding: "0 16px 16px",
-            }}>
-              <div style={{
-                padding: "12px",
-                background: "var(--color-background)",
-                borderRadius: "8px",
-              }}>
-                <div style={{
-                  fontSize: "11px",
-                  color: "var(--color-text-tertiary)",
-                  marginBottom: "6px",
-                }}>
-                  平均大小
-                </div>
-                <div style={{
-                  fontSize: "16px",
-                  fontWeight: 600,
-                  color: "var(--color-text)",
-                }}>
-                  {formatBytes(stats.averageSize)}
-                </div>
-              </div>
-
-              <div style={{
-                padding: "12px",
-                background: "var(--color-background)",
-                borderRadius: "8px",
-              }}>
-                <div style={{
-                  fontSize: "11px",
-                  color: "var(--color-text-tertiary)",
-                  marginBottom: "6px",
-                }}>
-                  最大备份
-                </div>
-                <div style={{
-                  fontSize: "16px",
-                  fontWeight: 600,
-                  color: "var(--color-text)",
-                }}>
-                  {formatBytes(stats.largestBackup)}
-                </div>
-              </div>
-
-              <div style={{
-                padding: "12px",
-                background: "var(--color-background)",
-                borderRadius: "8px",
-              }}>
-                <div style={{
-                  fontSize: "11px",
-                  color: "var(--color-text-tertiary)",
-                  marginBottom: "6px",
-                }}>
-                  总记录数
-                </div>
-                <div style={{
-                  fontSize: "16px",
-                  fontWeight: 600,
-                  color: "var(--color-text)",
-                }}>
-                  {stats.totalRecords.toLocaleString("zh-CN")}
-                </div>
-              </div>
-
-              <div style={{
-                padding: "12px",
-                background: "var(--color-background)",
-                borderRadius: "8px",
-              }}>
-                <div style={{
-                  fontSize: "11px",
-                  color: "var(--color-text-tertiary)",
-                  marginBottom: "6px",
-                }}>
-                  最后备份
-                </div>
-                <div style={{
-                  fontSize: "16px",
-                  fontWeight: 600,
-                  color: "var(--color-text)",
-                }}>
-                  {formatTime(stats.lastSuccessfulBackupTime)}
-                </div>
-              </div>
-            </div>
-          )}
-        </section>
+          <Collapse size="small" ghost items={[{
+            key: "details",
+            label: "查看详细数据",
+            children: <Descriptions size="small" column={2} items={[
+              { key: "average", label: "平均大小", children: formatBytes(stats.averageSize) },
+              { key: "largest", label: "最大备份", children: formatBytes(stats.largestBackup) },
+              { key: "records", label: "记录数", children: stats.totalRecords.toLocaleString("zh-CN") },
+              { key: "last", label: "最近备份", children: stats.lastSuccessfulBackupTime ? new Date(stats.lastSuccessfulBackupTime).toLocaleDateString("zh-CN") : "从未备份" },
+            ]} />,
+          }]} />
+        </Card>
       )}
 
       {/* 进度显示 */}
       {progress && (
-        <section className="more-page-section">
-          <div className="more-section-heading">
-            <h2>{phaseLabels[progress.phase]}</h2>
-          </div>
-          <div style={{ padding: "0 16px 16px" }}>
-            {/* 百分比和状态 */}
-            <div style={{
-              display: "flex",
-              alignItems: "baseline",
-              justifyContent: "space-between",
-              marginBottom: "12px",
-            }}>
-              <span style={{
-                fontSize: "16px",
-                fontWeight: 600,
-                color: "var(--color-text)",
-              }}>
-                {progress.message}
-              </span>
-              <strong style={{
-                fontSize: "28px",
-                fontWeight: 700,
-                color: "var(--color-primary)",
-                lineHeight: 1,
-              }}>
-                {percentage === null ? "--" : percentage}
-                <span style={{ fontSize: "14px", marginLeft: "2px" }}>%</span>
-              </strong>
-            </div>
-
-            {/* 进度条 */}
-            <div style={{
-              width: "100%",
-              height: "12px",
-              background: "var(--color-background)",
-              borderRadius: "6px",
-              overflow: "hidden",
-              marginBottom: "16px",
-            }}>
-              <div style={{
-                width: percentage === null ? "0%" : `${percentage}%`,
-                height: "100%",
-                background: "linear-gradient(90deg, var(--color-primary), var(--color-primary-dark))",
-                transition: "width 0.3s ease",
-              }} />
-            </div>
-
-            {/* 详细指标 */}
-            <div style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: "12px",
-            }}>
-              <div style={{
-                padding: "12px",
-                background: "var(--color-background)",
-                borderRadius: "8px",
-              }}>
-                <div style={{
-                  fontSize: "11px",
-                  color: "var(--color-text-tertiary)",
-                  marginBottom: "4px",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.5px",
-                }}>
-                  数据量
-                </div>
-                <div style={{
-                  fontSize: "14px",
-                  fontWeight: 600,
-                  color: "var(--color-text)",
-                }}>
-                  {formatBytes(progress.processedBytes)}
-                  <span style={{
-                    fontSize: "12px",
-                    fontWeight: 400,
-                    color: "var(--color-text-secondary)",
-                    marginLeft: "4px",
-                  }}>
-                    / {progress.totalBytes === null ? "计算中" : formatBytes(progress.totalBytes)}
-                  </span>
-                </div>
-              </div>
-
-              <div style={{
-                padding: "12px",
-                background: "var(--color-background)",
-                borderRadius: "8px",
-              }}>
-                <div style={{
-                  fontSize: "11px",
-                  color: "var(--color-text-tertiary)",
-                  marginBottom: "4px",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.5px",
-                }}>
-                  记录数
-                </div>
-                <div style={{
-                  fontSize: "14px",
-                  fontWeight: 600,
-                  color: "var(--color-text)",
-                }}>
-                  {Math.max(0, Math.trunc(progress.processedRecords)).toLocaleString("zh-CN")}
-                  <span style={{
-                    fontSize: "12px",
-                    fontWeight: 400,
-                    color: "var(--color-text-secondary)",
-                    marginLeft: "4px",
-                  }}>
-                    / {progress.totalRecords === null ? "计算中" : Math.max(0, Math.trunc(progress.totalRecords)).toLocaleString("zh-CN")}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
+        <Card className="backup-ant-progress" title={phaseLabels[progress.phase]} size="small">
+          <Progress percent={percentage ?? 0} status={progress.phase === "completed" ? "success" : "active"} />
+          <Descriptions size="small" column={2} items={[
+            { key: "message", label: "状态", children: progress.message },
+            { key: "data", label: "数据", children: `${formatBytes(progress.processedBytes)} / ${progress.totalBytes === null ? "计算中" : formatBytes(progress.totalBytes)}` },
+            { key: "records", label: "记录", children: `${Math.max(0, Math.trunc(progress.processedRecords)).toLocaleString("zh-CN")} / ${progress.totalRecords === null ? "计算中" : Math.max(0, Math.trunc(progress.totalRecords)).toLocaleString("zh-CN")}` },
+          ]} />
+        </Card>
       )}
 
       {/* 检查结果卡片 */}
       {selectedFile && inspection && (
-        <section className="more-page-section">
-          <div className="more-section-heading"><h2>备份文件详情</h2></div>
+        <Card className="backup-ant-inspection" title={<><FileSearchOutlined /> 备份详情</>} size="small">
           <div style={{ padding: "0 16px 16px" }}>
             {/* 文件信息卡片 */}
             <div style={{
@@ -1104,81 +754,33 @@ export function BackupRestorePage({ accountKey, accountLabel, onBack }: BackupRe
                 当前环境不能恢复此文件中的 Android SQLite，已禁用恢复功能。
               </div>
             ) : (
-              <button
-                type="button"
-                className="primary-button"
+              <Button
+                type="primary"
+                size="large"
+                block
                 disabled={busy || !canRestore}
                 onClick={() => void handleRestore()}
-                style={{
-                  width: "100%",
-                  height: "48px",
-                  fontSize: "15px",
-                  fontWeight: 600,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: "8px",
-                }}
+                icon={<InboxOutlined />}
               >
-                <Icon name="refresh" size={20} />
-                {activeOperation === "restore" ? "正在恢复并校验..." : "确认并开始恢复"}
-              </button>
+                {activeOperation === "restore" ? "正在恢复并校验…" : "开始恢复"}
+              </Button>
             )}
           </div>
-        </section>
+        </Card>
       )}
 
-      {/* 隐私说明 */}
-      <section style={{
-        margin: "16px",
-        padding: "12px",
-        background: "var(--color-info-light)",
-        borderLeft: "3px solid var(--color-info)",
-        borderRadius: "8px",
-        fontSize: "13px",
-        lineHeight: 1.5,
-        color: "var(--color-info)",
-      }}>
-        <div style={{ display: "flex", gap: "8px" }}>
-          <Icon name="database" size={18} />
-          <div>
-            <div style={{ fontWeight: 600, marginBottom: "4px" }}>备份文件包含隐私资料</div>
-            <div style={{ color: "var(--color-text)" }}>
-              文件可能包含居民、工单、签字和现场照片，请仅保存在可信设备并避免转发。Token、Cookie、Sign、密码和登录会话不会进入完整备份。
-            </div>
-          </div>
-        </div>
-      </section>
+      <Alert
+        className="backup-ant-alert"
+        type="info"
+        showIcon
+        message="请妥善保管备份文件"
+        description="备份含工单、签字和现场照片；请仅存于可信设备。不会包含 Token、Cookie、Sign、密码或登录会话。"
+      />
 
       {/* 状态通知 */}
       {notice.text && (
-        <div
-          style={{
-            margin: "0 16px 16px",
-            padding: "12px",
-            borderRadius: "8px",
-            fontSize: "13px",
-            lineHeight: 1.5,
-            background: notice.kind === "error"
-              ? "var(--color-error-light)"
-              : notice.kind === "success"
-              ? "var(--color-success-light)"
-              : notice.kind === "warning"
-              ? "var(--color-warning-light)"
-              : "var(--color-info-light)",
-            color: notice.kind === "error"
-              ? "var(--color-error)"
-              : notice.kind === "success"
-              ? "var(--color-success)"
-              : notice.kind === "warning"
-              ? "var(--color-warning)"
-              : "var(--color-info)",
-          }}
-          role={notice.kind === "error" ? "alert" : "status"}
-        >
-          {notice.text}
-        </div>
+        <Alert className="backup-ant-alert" type={notice.kind === "error" ? "error" : notice.kind} showIcon message={notice.text} />
       )}
-    </>
+    </main>
   );
 }

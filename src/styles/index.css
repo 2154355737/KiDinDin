@@ -30,5 +30,6 @@
 @import "./components/work-order-interactions.css";
 @import "./pages/home-filters.css";
 @import "./pages/backup-restore.css";
+@import "./pages/storage-management.css";
 @import "./themes/dark.css";
 @import "./themes/palettes.css";

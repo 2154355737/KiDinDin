@@ -27,6 +27,7 @@ export type MorePageProps = {
   onOpenSaved: () => void;
   onOpenAppointments: () => void;
   onOpenBackupRestore: () => void;
+  onOpenStorageManagement: () => void;
   onOpenSettings: () => void;
   onOpenVisitVerify: () => void;
   onOpenImageEncoding: () => void;
@@ -52,6 +53,7 @@ export function MorePage({
   onOpenSaved,
   onOpenAppointments,
   onOpenBackupRestore,
+  onOpenStorageManagement,
   onOpenSettings,
   onOpenVisitVerify,
   onOpenImageEncoding,
@@ -239,6 +241,11 @@ export function MorePage({
         <button type="button" className="more-feature-card" onClick={onOpenBackupRestore}>
           <span className="more-feature-icon"><Icon name="database" size={20} /></span>
           <span className="more-feature-copy"><b>备份与恢复</b><small>流式备份数 GB 图片、WebDB 与 SQLite</small></span>
+          <Icon name="chevron" size={17} />
+        </button>
+        <button type="button" className="more-feature-card" onClick={onOpenStorageManagement}>
+          <span className="more-feature-icon"><Icon name="database" size={20} /></span>
+          <span className="more-feature-copy"><b>存储管理</b><small>查看占用并清理废弃图片缓存</small></span>
           <Icon name="chevron" size={17} />
         </button>
         <button type="button" className="more-feature-card" onClick={onOpenSettings}>

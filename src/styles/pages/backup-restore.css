@@ -1,5 +1,177 @@
 /* 备份与恢复页面样式 */
 
+/* Ant Design 组件层：后续页面复用同一套密度、圆角和主题变量。 */
+.backup-ant-page {
+  min-height: 100%;
+  padding-bottom: 20px;
+  background: var(--color-background);
+}
+
+.backup-ant-page .ant-card,
+.backup-ant-page .ant-alert {
+  margin: 0 16px 16px;
+  border-color: var(--color-border);
+  border-radius: 14px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: none;
+}
+
+.backup-ant-page .ant-card-head {
+  min-height: 44px;
+  padding: 0 14px;
+  border-color: var(--color-border);
+  color: var(--color-text);
+  font-size: 14px;
+}
+
+.backup-ant-page .ant-card-body {
+  padding: 14px;
+}
+
+.backup-ant-page .ant-descriptions-item-label,
+.backup-ant-page .ant-descriptions-item-content,
+.backup-ant-page .ant-statistic-title,
+.backup-ant-page .ant-collapse-header {
+  color: var(--color-text-secondary);
+}
+
+.backup-ant-page .ant-descriptions-item-content,
+.backup-ant-page .ant-statistic-content {
+  color: var(--color-text);
+}
+
+.backup-ant-page .ant-btn {
+  min-height: 48px;
+  border-radius: 12px;
+  font-weight: 600;
+}
+
+.backup-ant-page .ant-btn-primary {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+}
+
+.backup-ant-account .ant-descriptions-item-label {
+  width: 72px;
+}
+
+.backup-ant-section {
+  margin: 0 16px 20px;
+}
+
+.backup-ant-section .more-section-heading {
+  margin-left: 0;
+}
+
+.backup-ant-actions,
+.backup-ant-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.backup-ant-stat-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 8px;
+}
+
+.backup-ant-stat-grid .ant-statistic {
+  min-width: 0;
+}
+
+.backup-ant-stat-grid .ant-statistic-title {
+  margin-bottom: 2px;
+  font-size: 11px;
+}
+
+.backup-ant-stat-grid .ant-statistic-content {
+  overflow: hidden;
+  font-size: 20px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.backup-ant-progress .ant-progress {
+  margin-bottom: 12px;
+}
+
+.backup-ant-inspection .ant-card-head-title .anticon {
+  margin-right: 8px;
+  color: var(--color-primary);
+}
+
+.backup-ant-alert.ant-alert {
+  line-height: 1.55;
+}
+
+@media (max-width: 360px) {
+  .backup-ant-stat-grid .ant-statistic-content {
+    font-size: 17px;
+  }
+}
+
+/* Ant Design 不会自动读取应用的 .theme-dark 变量，必须在组件根节点显式映射。 */
+.theme-dark .backup-ant-page {
+  background: var(--dark-base);
+  color: var(--dark-text);
+}
+
+.theme-dark .backup-ant-page .ant-card,
+.theme-dark .backup-ant-page .ant-alert {
+  border-color: var(--dark-border-strong);
+  background: var(--dark-surface);
+  color: var(--dark-text);
+}
+
+.theme-dark .backup-ant-page .ant-card-head,
+.theme-dark .backup-ant-page .ant-card-head-title,
+.theme-dark .backup-ant-page .ant-descriptions-item-content,
+.theme-dark .backup-ant-page .ant-statistic-content,
+.theme-dark .backup-ant-page .ant-statistic-content-value,
+.theme-dark .backup-ant-page .ant-collapse-header,
+.theme-dark .backup-ant-page .ant-collapse-content,
+.theme-dark .backup-ant-page .ant-collapse-content-box,
+.theme-dark .backup-ant-page .ant-badge-status-text {
+  color: var(--dark-text) !important;
+}
+
+.theme-dark .backup-ant-page .ant-card-head,
+.theme-dark .backup-ant-page .ant-collapse,
+.theme-dark .backup-ant-page .ant-collapse-item {
+  border-color: var(--dark-border) !important;
+}
+
+.theme-dark .backup-ant-page .ant-descriptions-item-label,
+.theme-dark .backup-ant-page .ant-statistic-title,
+.theme-dark .backup-ant-page .ant-collapse-expand-icon {
+  color: var(--dark-text-secondary) !important;
+}
+
+.theme-dark .backup-ant-page .ant-btn-default {
+  border-color: var(--dark-border-strong);
+  background: var(--dark-raised);
+  color: var(--dark-text);
+}
+
+.theme-dark .backup-ant-page .ant-btn-primary {
+  color: #fff;
+}
+
+.theme-dark .backup-ant-page .backup-ant-alert.ant-alert-info {
+  background: #101820;
+}
+
+.theme-dark .backup-ant-page .ant-alert-message,
+.theme-dark .backup-ant-page .ant-alert-description {
+  color: var(--dark-text) !important;
+}
+
+.theme-dark .backup-ant-page code {
+  color: var(--dark-text-secondary);
+}
+
 .backup-restore-page {
   display: flex;
   flex-direction: column;

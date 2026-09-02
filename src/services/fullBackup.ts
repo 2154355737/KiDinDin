@@ -34,6 +34,7 @@ const SAFE_LOCAL_STORAGE_KEYS = new Set([
 const SAFE_LOCAL_STORAGE_PREFIXES = [
   "kidindin.auto-refresh-at:",
   "kidindin.pending-log-retries:",
+  "kidindin.employee-badge.v1:",
 ] as const;
 const EXCLUDED_LOCAL_STORAGE_KEYS = new Set([
   "kidindin.auto-login-history-id",
@@ -953,6 +954,12 @@ function validateLocalStorageValue(key: string, value: string, location: string)
   if (key.startsWith("kidindin.auto-refresh-at:")) {
     const timestamp = Number(value);
     if (!Number.isFinite(timestamp) || timestamp < 0) throw new Error(`${location} 不是有效时间戳`);
+    return;
+  }
+  if (key.startsWith("kidindin.employee-badge.v1:")) {
+    if (!value.trim() || value.length > 4_096) {
+      throw new Error(`${location} 的工牌绑定内容无效或过长`);
+    }
     return;
   }
   if (

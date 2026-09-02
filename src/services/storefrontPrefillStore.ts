@@ -290,6 +290,24 @@ export async function getStorefrontPhotoPrefillHeaderIds(
   }
 }
 
+export async function listStorefrontPhotoPrefills(accountKey: string) {
+  assertIdentifier(accountKey, "账号标识");
+  const database = await openDatabase();
+  try {
+    const transaction = database.transaction(STORE_NAME, "readonly");
+    const request = transaction.objectStore(STORE_NAME).index(ACCOUNT_INDEX).getAll(accountKey);
+    const [values] = await Promise.all([
+      requestResult<unknown[]>(request, "读取门头预填照片"),
+      transactionDone(transaction, "读取门头预填照片"),
+    ]);
+    return values
+      .map((value, index) => parsePrefill(value, `门头预填照片 ${index + 1}`))
+      .sort((left, right) => Date.parse(right.savedAt) - Date.parse(left.savedAt));
+  } finally {
+    database.close();
+  }
+}
+
 export async function saveStorefrontPhotoPrefill(
   accountKey: string,
   order: WorkOrder,
