@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "./Icon";
 
@@ -16,6 +16,14 @@ function useFilePreviewUrl(file: File | null | undefined) {
   }, [file]);
 
   return url;
+}
+
+async function snapshotSelectedFile(file: File) {
+  const contents = await file.arrayBuffer();
+  return new File([contents], file.name, {
+    type: file.type,
+    lastModified: file.lastModified,
+  });
 }
 
 function ImagePreviewDialog({
@@ -123,18 +131,37 @@ export function UploadFilePicker({
     "library",
   );
   const [pendingError, setPendingError] = useState("");
+  const [selectionError, setSelectionError] = useState("");
   const [confirming, setConfirming] = useState(false);
+  const selectionVersionRef = useRef(0);
 
-  const stageSelectedFile = (
+  const stageSelectedFile = async (
     input: HTMLInputElement,
     source: "camera" | "library",
   ) => {
     const nextFile = input.files?.[0] ?? null;
-    input.value = "";
-    if (!nextFile) return;
-    setPendingError("");
-    setPendingSource(source);
-    setPendingFile(nextFile);
+    if (!nextFile) {
+      input.value = "";
+      return;
+    }
+    const version = ++selectionVersionRef.current;
+    setSelectionError("");
+    try {
+      // Android may revoke a picker-backed File after the input is cleared or
+      // the picker closes. Read it immediately and use the in-memory copy for
+      // preview, deduplication, and the later upload.
+      const snapshot = await snapshotSelectedFile(nextFile);
+      if (version !== selectionVersionRef.current) return;
+      setPendingError("");
+      setPendingSource(source);
+      setPendingFile(snapshot);
+    } catch {
+      if (version !== selectionVersionRef.current) return;
+      setPendingFile(null);
+      setSelectionError("图片文件无法读取，请重新选择或重新拍摄后再试");
+    } finally {
+      input.value = "";
+    }
   };
 
   const closePendingPreview = () => {
@@ -196,6 +223,11 @@ export function UploadFilePicker({
           }
         />
       </label>
+      {selectionError ? (
+        <p className="workflow-file-picker-error" role="alert">
+          {selectionError}
+        </p>
+      ) : null}
       {url ? (
         <button
           type="button"

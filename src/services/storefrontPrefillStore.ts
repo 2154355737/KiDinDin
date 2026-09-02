@@ -1,4 +1,5 @@
 import type { WorkOrder } from "../types/workOrder";
+import { compressStorefrontPhoto } from "./storefrontPhotoCompression";
 
 export type StorefrontPhotoPrefill = {
   accountKey: string;
@@ -297,18 +298,20 @@ export async function saveStorefrontPhotoPrefill(
   assertIdentifier(accountKey, "账号标识");
   assertIdentifier(order.woHeaderId, "工单标识");
   validateImage(file);
-  const mimeType = file.type || "image/jpeg";
+  const compressedFile = await compressStorefrontPhoto(file);
+  const mimeType = compressedFile.type || "image/jpeg";
   const savedAt = new Date().toISOString();
   const prefill = parsePrefill(
     {
       accountKey,
-      blob: file.slice(0, file.size, mimeType),
-      fileName: file.name.trim() || `storefront-${order.woHeaderId}.jpg`,
+      blob: compressedFile.slice(0, compressedFile.size, mimeType),
+      fileName:
+        compressedFile.name.trim() || `storefront-${order.woHeaderId}.jpg`,
       key: makeStorefrontPrefillKey(accountKey, order.woHeaderId),
       mimeType,
       resident: order.resident,
       savedAt,
-      size: file.size,
+      size: compressedFile.size,
       unit: order.unit,
       woHeaderId: order.woHeaderId,
       woNumber: order.woNumber,

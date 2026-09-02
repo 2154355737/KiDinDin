@@ -189,6 +189,13 @@
   overflow: hidden;
 }
 
+.workflow-file-picker-error {
+  margin: 0;
+  color: var(--color-danger, #c53956);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 .native-camera-picker {
   position: relative;
   min-width: 0;

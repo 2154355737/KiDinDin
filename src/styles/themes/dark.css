@@ -163,7 +163,7 @@ html[data-theme="dark"] #root {
 .theme-dark .refresh-token-input input,
 .theme-dark .token-export-result textarea,
 .theme-dark .export-password-input input,
-.theme-dark .interval-setting input,
+.theme-dark .interval-setting input:not([type="range"]),
 .theme-dark .building-filter select,
 .theme-dark .filter-picker-trigger,
 .theme-dark .filter-picker-menu {

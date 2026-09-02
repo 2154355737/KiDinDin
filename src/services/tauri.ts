@@ -273,6 +273,10 @@ export function nativeRequest(path: string, method: string, body?: unknown) {
   return nativeInvoke<unknown>("cis_request", { body: body ?? null, method, path });
 }
 
+export function downloadCemAudio(listenRecordUrl: string) {
+  return nativeInvoke<{ base64: string; mime: string }>("cis_download_audio", { listenRecordUrl });
+}
+
 export function fetchDeviceIdentityPreview() {
   return nativeInvoke<DeviceIdentityPreview>("device_identity_preview");
 }

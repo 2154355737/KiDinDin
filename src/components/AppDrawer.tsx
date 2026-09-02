@@ -1,6 +1,9 @@
 import {
   bindSupplyPointScanAddress,
+  fetchCemRecordings,
   fetchSupplyPointScanAddress,
+  notifyWorkOrderStatus,
+  type CEMRecording,
   type ExchangeLog,
   type WorkOrderDetail,
 } from "../services/workOrderApi";
@@ -38,6 +41,7 @@ import {
 } from "../services/theme";
 import {
   fetchDeviceIdentityPreview,
+  downloadCemAudio,
   isNativeRuntime,
   type AuthStatus,
   type DeviceIdentityPreview,
@@ -61,6 +65,7 @@ import {
   storefrontPhotoPrefillToFile,
   type StorefrontPhotoPrefill,
 } from "../services/storefrontPrefillStore";
+import { getEmployeeBadgeCode } from "../services/employeeBadgeStore";
 
 function asObject(value: unknown): Record<string, unknown> {
   return value && typeof value === "object"
@@ -83,6 +88,13 @@ function firstNonEmptyText(...values: unknown[]) {
   }
   return "";
 }
+
+function recordingLabel(callId: unknown) {
+  const value = String(callId ?? "");
+  const stamp = value.match(/20\d{12}/)?.[0];
+  return stamp ? `${stamp.slice(0, 4)}-${stamp.slice(4, 6)}-${stamp.slice(6, 8)} ${stamp.slice(8, 10)}:${stamp.slice(10, 12)}:${stamp.slice(12, 14)}` : value || "录音时间待服务端返回";
+}
+
 
 function normalizedExpiry(expiresAt: number | null) {
   if (!expiresAt) return null;
@@ -393,6 +405,11 @@ export function AppDrawer({
     "idle" | "running" | "success" | "error"
   >("idle");
   const [oneStandardScanning, setOneStandardScanning] = useState(false);
+  const [recordingOpen, setRecordingOpen] = useState(false);
+  const [recordings, setRecordings] = useState<CEMRecording[]>([]);
+  const [recordingBusy, setRecordingBusy] = useState(false);
+  const [recordingMessage, setRecordingMessage] = useState("");
+  const [audioUrl, setAudioUrl] = useState("");
   const [refreshingSession, setRefreshingSession] = useState(false);
   const [refreshMessage, setRefreshMessage] = useState("");
   const [refreshTokenInput, setRefreshTokenInput] = useState("");
@@ -434,6 +451,8 @@ export function AppDrawer({
     asObject(order?.raw).supplyPointId,
     asObject(order?.raw).supplypointId,
   );
+  const isRecordingWorkOrder = String(header.woDetailType ?? asObject(order?.raw).woDetailType) === "401";
+  const employeeBadgeCode = getEmployeeBadgeCode(localAccountKey);
   useEffect(() => {
     setExchangeLogs(null);
     setExchangeLogsLoading(false);
@@ -452,7 +471,10 @@ export function AppDrawer({
     setOneStandardMessage("");
     setOneStandardStatus("idle");
     setOneStandardScanning(false);
+    setRecordingOpen(false); setRecordings([]); setRecordingBusy(false); setRecordingMessage(""); setAudioUrl("");
   }, [order?.woHeaderId]);
+
+  useEffect(() => () => { if (audioUrl) URL.revokeObjectURL(audioUrl); }, [audioUrl]);
 
   useEffect(() => {
     let active = true;
@@ -512,7 +534,7 @@ export function AppDrawer({
   ) => {
     if (!order || !localAccountKey || !selectedFile) return;
     setStorefrontPrefillStatus("saving");
-    setStorefrontPrefillMessage("正在把门头照片持久保存到 App…");
+    setStorefrontPrefillMessage("正在按 500 KB 上限优化并保存门头照片到 App…");
     try {
       const prefill = await saveStorefrontPhotoPrefill(
         localAccountKey,
@@ -525,7 +547,7 @@ export function AppDrawer({
       setStorefrontPrefillDraft(file);
       setStorefrontPrefillStatus("success");
       setStorefrontPrefillMessage(
-        "已持久保存到 App；重启后仍会保留，进入批量提交时会自动带入",
+        `已按 500 KB 上限优化并持久保存到 App（${Math.ceil(prefill.size / 1024)} KB）；重启后仍会保留，进入批量提交时会自动带入`,
       );
       onStorefrontPrefillChange(order.woHeaderId, true);
       setStorefrontPrefillOpen(false);
@@ -646,6 +668,42 @@ export function AppDrawer({
         error instanceof Error ? error.message : "安检预填失败",
       );
     }
+  };
+
+  const loadRecordings = async () => {
+    if (!order) return;
+    setRecordingBusy(true); setRecordingMessage("正在查询当前工单录音…");
+    try { const data = await fetchCemRecordings(order.woNumber); setRecordings(data); setRecordingMessage(data.length ? `已找到 ${data.length} 条录音` : "当前工单暂无可播放录音"); }
+    catch (error) { setRecordingMessage(error instanceof Error ? error.message : "录音查询失败"); }
+    finally { setRecordingBusy(false); }
+  };
+
+  const openRecordingManager = () => { setRecordingOpen(true); void loadRecordings(); };
+
+  const stopRecording = async () => {
+    if (!order || recordingBusy) return;
+    setRecordingBusy(true); setRecordingMessage("正在发送关闭录音指令…");
+    try {
+      if (!employeeBadgeCode) throw new Error("请先在“更多”页绑定电子工牌码");
+      await notifyWorkOrderStatus({ status: "end", deviceNo: employeeBadgeCode, orderNo: order.woNumber });
+      setRecordingMessage("关闭录音指令已发送，可稍后刷新录音列表");
+    }
+    catch (error) { setRecordingMessage(error instanceof Error ? error.message : "关闭录音失败；不会影响其他工单操作"); }
+    finally { setRecordingBusy(false); }
+  };
+
+  const playRecording = async (recording: CEMRecording) => {
+    const source = firstNonEmptyText(recording.listenRecordUrl);
+    if (!source || recordingBusy) return;
+    setRecordingBusy(true); setRecordingMessage("正在加载录音…");
+    try {
+      const file = await downloadCemAudio(source);
+      const bytes = Uint8Array.from(atob(file.base64), (character) => character.charCodeAt(0));
+      const nextUrl = URL.createObjectURL(new Blob([bytes], { type: file.mime || "audio/mpeg" }));
+      if (audioUrl) URL.revokeObjectURL(audioUrl);
+      setAudioUrl(nextUrl); setRecordingMessage("录音已就绪，可播放和拖动进度");
+    } catch (error) { setRecordingMessage(error instanceof Error ? error.message : "录音暂不可播放，请稍后重试"); }
+    finally { setRecordingBusy(false); }
   };
 
   const openOneStandard = async () => {
@@ -1076,6 +1134,11 @@ export function AppDrawer({
                   {storefrontPrefillMessage}
                 </p>
               ) : null}
+              <button type="button" className="recording-quick-action" disabled={!isRecordingWorkOrder} onClick={openRecordingManager}>
+                <span className="detail-quick-action-icon"><Icon name="mic" size={18} /></span>
+                <span><b>录音管理</b><small>{isRecordingWorkOrder ? "关闭录音或查看当前工单录音" : "仅支持 401 安检工单"}</small></span>
+                <Icon name="chevron" size={16} />
+              </button>
               <button
                 type="button"
                 className="one-standard-quick-action"
@@ -1878,6 +1941,18 @@ export function AppDrawer({
             </div>,
             document.body,
           )}
+        {recordingOpen && order && createPortal(
+          <div className="retry-confirm-backdrop" onClick={() => !recordingBusy && setRecordingOpen(false)}>
+            <section className="retry-confirm-dialog recording-dialog" role="dialog" aria-modal="true" aria-label="录音管理" onClick={(event) => event.stopPropagation()}>
+              <h3>录音管理</h3><p>工单号：{order.woNumber}。关闭录音不会阻断后续工单操作。</p>
+              <div className="recording-actions"><button type="button" disabled={recordingBusy} onClick={() => void stopRecording()}><Icon name="pause" size={16} />关闭录音</button><button type="button" disabled={recordingBusy} onClick={() => void loadRecordings()}><Icon name="refresh" size={16} />刷新列表</button></div>
+              {recordingMessage ? <p className="one-standard-dialog-message" role="status">{recordingMessage}</p> : null}
+              {audioUrl ? <audio className="recording-player" controls src={audioUrl} autoPlay /> : null}
+              <ul className="recording-list">{recordings.map((recording, index) => <li key={firstNonEmptyText(recording.callId) || String(index)}><span><b>{recordingLabel(recording.callId)}</b><small>{recording.listenRecordUrl ? "可播放" : "服务端未提供播放地址"}</small></span><button type="button" disabled={recordingBusy || !recording.listenRecordUrl} onClick={() => void playRecording(recording)}>播放</button></li>)}</ul>
+              <div className="retry-confirm-actions"><button type="button" disabled={recordingBusy} onClick={() => setRecordingOpen(false)}>关闭</button><button type="button" disabled>共 {recordings.length} 条</button></div>
+            </section>
+          </div>, document.body,
+        )}
       </section>
     </div>
   );

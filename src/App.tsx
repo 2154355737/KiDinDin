@@ -3393,6 +3393,7 @@ export default function App() {
           {screen === "orders" && mainTab === "more" && (
             <MorePage
             items={localWorkOrders}
+            accountKey={localAccountKey}
             busy={
               localDataBusy ||
               !localAccountKey ||
@@ -3670,15 +3671,17 @@ export default function App() {
               }
             }}
             onIntervalMinChange={(value) => {
-              setSubmitIntervalMinSeconds(value);
+              const nextValue = Math.max(1, Math.min(20, value));
+              setSubmitIntervalMinSeconds(nextValue);
               setSubmitIntervalMaxSeconds((current) =>
-                Math.max(current, value),
+                Math.max(current, nextValue),
               );
             }}
             onIntervalMaxChange={(value) => {
-              setSubmitIntervalMaxSeconds(value);
+              const nextValue = Math.max(1, Math.min(20, value));
+              setSubmitIntervalMaxSeconds(nextValue);
               setSubmitIntervalMinSeconds((current) =>
-                Math.min(current, value),
+                Math.min(current, nextValue),
               );
             }}
             onBack={() => {

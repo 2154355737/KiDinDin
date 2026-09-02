@@ -102,6 +102,8 @@ export type SupplyPointScanAddress = {
   [key: string]: unknown;
 };
 
+export type CEMRecording = { callId?: string | null; listenRecordUrl?: string | null; [key: string]: unknown };
+
 export type UploadedFile = {
   attachId?: string | null;
   bizId?: string | null;
@@ -143,6 +145,8 @@ const paths = {
   allWorkOrders: "/api/workorder/tcisworkorder/newCriteriaHandle",
   household: "/api/workorder/tcisworkorderAj/updateLastHouseholdTime",
   notify: "/api/appinterface/cem/custom/orderStatusNotify",
+  recordings: "/api/appinterface/cem/custom/recordings",
+  devicePower: "/api/appinterface/cem/custom/getDevicePower",
   close: "/api/workorder/tcisworkorder/close4SecurityCheck",
   exchange: "/api/workorder/exchange/log",
   exchangeQuery: "/api/workorder/exchange/log/query_by_wo",
@@ -408,6 +412,22 @@ export function updateLastHouseholdTime(payload: {
 
 export function notifyWorkOrderStatus(payload: { status: string; deviceNo: string | null; orderNo: string }) {
   return request<unknown>(paths.notify, "POST", payload);
+}
+
+export async function fetchCemRecordings(woNumber: string) {
+  const response = await request<unknown>(`${paths.recordings}?${new URLSearchParams({ woNumber })}`, "GET");
+  const data = response.data;
+  if (Array.isArray(data)) return data as CEMRecording[];
+  if (!data || typeof data !== "object") return [];
+  const object = data as Record<string, unknown>;
+  for (const key of ["records", "list", "rows", "data"]) if (Array.isArray(object[key])) return object[key] as CEMRecording[];
+  return [];
+}
+
+export async function fetchDevicePower(imei: string) {
+  const query = new URLSearchParams({ imei });
+  const response = await request<unknown>(`${paths.devicePower}?${query}`, "GET");
+  return response.data;
 }
 
 export function closeSecurityCheckWorkOrder(payload: {

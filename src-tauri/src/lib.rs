@@ -541,6 +541,23 @@ async fn cis_request(
 }
 
 #[tauri::command]
+async fn cis_download_audio(listen_record_url: String, state: State<'_, CisState>) -> Result<DownloadedFile, String> {
+    if listen_record_url.trim().is_empty() { return Err("录音地址为空".into()); }
+    let session = state.session.lock().map_err(|_| "会话锁定失败")?.clone().ok_or_else(|| "登录已失效，请重新登录".to_string())?;
+    let encoded: String = listen_record_url.bytes().flat_map(|byte| {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') { vec![(byte as char).to_string()] } else { vec![format!("%{byte:02X}")] }
+    }).collect();
+    let path = format!("/api/appinterface/audio/proxy?url={encoded}");
+    let response = apply_headers(state.client.get(request_url(&session, &path)), &session, false).send().await.map_err(|error| format!("录音下载失败：{error}"))?;
+    let status = response.status();
+    if !status.is_success() { return Err(format!("录音代理返回 {status}")); }
+    let mime = response.headers().get(header::CONTENT_TYPE).and_then(|value| value.to_str().ok()).unwrap_or("audio/mpeg").to_string();
+    let bytes = response.bytes().await.map_err(|error| format!("读取录音失败：{error}"))?;
+    if bytes.is_empty() || bytes.len() > 50 * 1024 * 1024 { return Err("录音文件暂不可播放，请稍后重试".into()); }
+    Ok(DownloadedFile { base64: STANDARD.encode(bytes), mime, name: "cem-recording.mp3".into() })
+}
+
+#[tauri::command]
 async fn cis_upload_files(
     files: Vec<UploadFile>,
     biz_id: Option<String>,
@@ -630,6 +647,7 @@ pub fn run() {
             vacant_room::save_vacant_room_images,
             vacant_room::verify_augment_image,
             cis_request,
+            cis_download_audio,
             cis_upload_files
         ])
         .run(tauri::generate_context!())

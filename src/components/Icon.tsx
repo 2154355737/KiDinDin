@@ -1,5 +1,6 @@
 import {
   Archive,
+  Badge,
   BarChart3,
   Calendar,
   CalendarClock,
@@ -22,6 +23,7 @@ import {
   Home,
   ListTodo,
   LogOut,
+  Mic,
   Package,
   Pause,
   PenLine,
@@ -43,6 +45,7 @@ import {
 
 const icons: Record<string, LucideIcon> = {
   archive: Archive,
+  badge: Badge,
   "bar-chart": BarChart3,
   calendar: Calendar,
   appointment: CalendarClock,
@@ -68,6 +71,7 @@ const icons: Record<string, LucideIcon> = {
   list: ListTodo,
   logout: LogOut,
   more: Ellipsis,
+  mic: Mic,
   note: FileText,
   package: Package,
   pause: Pause,
