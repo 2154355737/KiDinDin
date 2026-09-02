@@ -85,6 +85,7 @@ import {
   storefrontPhotoPrefillToFile,
 } from "./services/storefrontPrefillStore";
 import { getSignedWorkOrderHeaderIds } from "./services/signatureStore";
+import { getResidentSecurityPrefilledIds } from "./services/residentSecurityPrefillStore";
 import {
   findDuplicateImage,
   findFirstDuplicateImage,
@@ -164,6 +165,11 @@ const VacantRoomFillPage = lazy(() =>
 const ResidentSecurityPrefillPage = lazy(() =>
   import("./pages/ResidentSecurityPrefillPage").then((module) => ({
     default: module.ResidentSecurityPrefillPage,
+  })),
+);
+const DailyBatchPrefillPage = lazy(() =>
+  import("./pages/DailyBatchPrefillPage").then((module) => ({
+    default: module.DailyBatchPrefillPage,
   })),
 );
 const VisitVerifyPage = lazy(() =>
@@ -335,6 +341,25 @@ type HistoryPhotoCacheEntry = {
 };
 
 type HistoryPhotoStatus = "idle" | "loading" | "ready" | "error";
+
+type WatermarkedOrderUpload = {
+  address: string;
+  bizId: string;
+  previewFiles: File[];
+  sourceFiles: [File, File];
+};
+
+function registeredWatermarkAddress(order: WorkOrder) {
+  const fullAddress = order.address.trim();
+  const buildingAddress = fullAddress.match(
+    /^(.+?(?:\d+|[一二三四五六七八九十]+)\s*(?:号楼|栋|幢|座))/,
+  )?.[1]?.trim();
+  const address = buildingAddress || fullAddress;
+  if (!address || address === "未提供服务地址" || address === "地址信息待补充") {
+    throw new Error(`${order.woNumber || order.id} 缺少可用于水印的工单登记地址`);
+  }
+  return address;
+}
 
 function batchImageEntries(
   orders: readonly WorkOrder[],
@@ -741,9 +766,14 @@ export default function App() {
   const [detailCloseupFiles, setDetailCloseupFiles] = useState<
     Record<string, File>
   >({});
+  const [watermarkedUploads, setWatermarkedUploads] = useState<
+    Record<string, WatermarkedOrderUpload>
+  >({});
   const [storefrontPrefilledOrderIds, setStorefrontPrefilledOrderIds] =
     useState<string[]>([]);
   const [storefrontPrefilledOrderHeaderIds, setStorefrontPrefilledOrderHeaderIds] =
+    useState<string[]>([]);
+  const [residentSecurityPrefilledOrderHeaderIds, setResidentSecurityPrefilledOrderHeaderIds] =
     useState<string[]>([]);
   const [signedOrderHeaderIds, setSignedOrderHeaderIds] = useState<string[]>([]);
   const [signatureOrder, setSignatureOrder] = useState<WorkOrder | null>(null);
@@ -1072,6 +1102,11 @@ export default function App() {
       .catch(() => {
         if (active) setSignedOrderHeaderIds([]);
       });
+
+    // 加载居民安检预填记录
+    const residentSecurityPrefilledIds = getResidentSecurityPrefilledIds(localAccountKey);
+    setResidentSecurityPrefilledOrderHeaderIds(residentSecurityPrefilledIds);
+
     return () => {
       active = false;
     };
@@ -2381,6 +2416,7 @@ export default function App() {
             }
           }
           setHistoryFiles((current) => ({ ...loadedFiles, ...current }));
+          setWatermarkedUploads({});
           setStorefrontPrefilledOrderIds(loadedPrefilledIds);
           setBatchStorefrontMessage(
             loadedPrefilledIds.length
@@ -2436,9 +2472,56 @@ export default function App() {
         );
         return;
       }
+      const nextWatermarkedUploads = { ...watermarkedUploads };
+      for (const order of selectedOrders) {
+        const storefrontFile = historyFiles[order.id];
+        const detailFile = detailCloseupFiles[order.id];
+        if (!storefrontFile || !detailFile) {
+          throw new Error(`${order.woNumber || order.id} 缺少两张提交图片`);
+        }
+        const address = registeredWatermarkAddress(order);
+        const existing = nextWatermarkedUploads[order.id];
+        if (
+          existing &&
+          existing.address === address &&
+          existing.sourceFiles[0] === storefrontFile &&
+          existing.sourceFiles[1] === detailFile
+        ) {
+          continue;
+        }
+        setRunMessage(`正在生成 ${order.woNumber} 的带水印图片预览…`);
+        const uploaded = await uploadWorkOrderFiles(
+          [storefrontFile, detailFile],
+          "",
+          { securityWatermark: true, watermarkAddress: address },
+        );
+        let attachments = (uploaded.data.sysAttachList ?? []).filter((file) =>
+          String(file.downloadFilePath ?? "").trim(),
+        );
+        if (attachments.length < 2) {
+          attachments = (await fetchWorkOrderFiles(uploaded.data.bizId)).filter(
+            (file) => String(file.downloadFilePath ?? "").trim(),
+          );
+        }
+        if (attachments.length < 2) {
+          throw new Error(
+            `${order.woNumber || order.id} 上传后未返回两张可预览的带水印附件`,
+          );
+        }
+        const previewFiles = await Promise.all(
+          attachments.slice(0, 2).map((attachment) => downloadWorkOrderFile(attachment)),
+        );
+        nextWatermarkedUploads[order.id] = {
+          address,
+          bizId: uploaded.data.bizId,
+          previewFiles,
+          sourceFiles: [storefrontFile, detailFile],
+        };
+        setWatermarkedUploads({ ...nextWatermarkedUploads });
+      }
       setScreen("confirm");
     } catch (error) {
-      setLoadError(`图片去重检查失败：${messageOf(error)}`);
+      setLoadError(`带水印图片准备失败：${messageOf(error)}`);
     } finally {
       setBatchDuplicateChecking(false);
     }
@@ -2475,6 +2558,21 @@ export default function App() {
       )
     )
       return;
+    if (
+      selectedOrders.some((order) => {
+        const uploaded = watermarkedUploads[order.id];
+        return (
+          !uploaded ||
+          uploaded.address !== order.address.trim() ||
+          uploaded.sourceFiles[0] !== historyFiles[order.id] ||
+          uploaded.sourceFiles[1] !== detailCloseupFiles[order.id]
+        );
+      })
+    ) {
+      setLoadError("请返回确认页重新生成每个工单的带水印图片预览");
+      setScreen("prepare");
+      return;
+    }
     setBatchOrderIds(selectedOrders.map((order) => order.id));
     setRunning(true);
     setPaused(false);
@@ -2483,16 +2581,12 @@ export default function App() {
     let submittedCount = 0;
     for (let index = 0; index < selectedOrders.length; index += 1) {
       const order = selectedOrders[index];
-      const historyFile = historyFiles[order.id];
-      const secondaryFile =
-        submitMode === "all-manual"
-          ? detailCloseupFiles[order.id]
-          : libraryFile;
+      const watermarkedUpload = watermarkedUploads[order.id];
       setCurrentIndex(index + 1);
 
-      if (!historyFile || !secondaryFile) {
+      if (!watermarkedUpload) {
         setOrderStatus(order.id, "关闭失败");
-        setRunMessage(`${order.woNumber} 缺少当前工单的提交照片，已停止该单`);
+        setRunMessage(`${order.woNumber} 缺少已确认的带水印附件，已停止该单`);
         continue;
       }
 
@@ -2563,12 +2657,8 @@ export default function App() {
       }
       submittedCount += 1;
       try {
-        setRunMessage(`正在上传 ${order.woNumber} 的两张照片…`);
-        const uploaded = await uploadWorkOrderFiles([
-          historyFile,
-          secondaryFile,
-        ]);
-        const bizId = uploaded.data.bizId;
+        setRunMessage(`正在使用 ${order.woNumber} 已确认的带水印照片…`);
+        const bizId = watermarkedUpload.bizId;
         setRunMessage(`正在关闭安检工单 ${order.woNumber}…`);
         queuePendingLogRetry(order);
         await closeSecurityCheckWorkOrder({
@@ -3255,6 +3345,9 @@ export default function App() {
             storefrontPrefilledOrderHeaderIds={
               storefrontPrefilledOrderHeaderIds
             }
+            residentSecurityPrefilledOrderHeaderIds={
+              residentSecurityPrefilledOrderHeaderIds
+            }
             signedOrderHeaderIds={signedOrderHeaderIds}
             collapsedFloorGroupKeys={collapsedHomeFloorGroupKeys}
             activeFilterCount={activeFilterCount}
@@ -3314,6 +3407,7 @@ export default function App() {
               setSelected([]);
               setHistoryFiles({});
               setDetailCloseupFiles({});
+              setWatermarkedUploads({});
               setStorefrontPrefilledOrderIds([]);
               setBatchStorefrontMessage("");
               setBatchDuplicateChecking(false);
@@ -3323,6 +3417,7 @@ export default function App() {
               setScreen("mode");
             }}
             onOpenResidentSecurityPrefill={() => setScreen("resident-security-prefill")}
+            onOpenDailyBatchPrefill={() => setScreen("daily-batch-prefill")}
             onOpenVacantRoom={() => setScreen("vacant-room")}
             onOpenVacantRoomFill={() => setScreen("vacant-room-fill")}
             onOpenLogAudit={() => {
@@ -3387,6 +3482,23 @@ export default function App() {
               orders={orders}
               date={selectedDate}
               onDateChange={changeSelectedDate}
+              onBack={() => {
+                setScreen("orders");
+                setMainTab("more");
+              }}
+            />
+          )}
+          {screen === "daily-batch-prefill" && localAccountKey && (
+            <DailyBatchPrefillPage
+              accountKey={localAccountKey}
+              orders={orders}
+              date={selectedDate}
+              onDateChange={changeSelectedDate}
+              onPrefilledIdsChange={(woHeaderIds) => {
+                setResidentSecurityPrefilledOrderHeaderIds((current) =>
+                  Array.from(new Set([...current, ...woHeaderIds])),
+                );
+              }}
               onBack={() => {
                 setScreen("orders");
                 setMainTab("more");
@@ -3551,6 +3663,7 @@ export default function App() {
               if (mode !== submitMode) {
                 setHistoryFiles({});
                 setDetailCloseupFiles({});
+                setWatermarkedUploads({});
                 setStorefrontPrefilledOrderIds([]);
                 setBatchStorefrontMessage("");
                 setSelectedHistoryPhotoIds({});
@@ -3656,6 +3769,11 @@ export default function App() {
                 else delete next[activeOrder.id];
                 return next;
               });
+              setWatermarkedUploads((current) => {
+                const next = { ...current };
+                delete next[activeOrder.id];
+                return next;
+              });
             }}
             onHistoryModeChange={setHistoryMode}
             onFindHistoricalPhotos={() => void findHistoricalPhotos()}
@@ -3665,6 +3783,11 @@ export default function App() {
                 ...current,
                 [activeOrder.id]: photo.file,
               }));
+              setWatermarkedUploads((current) => {
+                const next = { ...current };
+                delete next[activeOrder.id];
+                return next;
+              });
               setSelectedHistoryPhotoIds((current) => ({
                 ...current,
                 [activeOrder.id]: photo.id,
@@ -3694,6 +3817,11 @@ export default function App() {
                 else delete next[activeOrder.id];
                 return next;
               });
+              setWatermarkedUploads((current) => {
+                const next = { ...current };
+                delete next[activeOrder.id];
+                return next;
+              });
             }}
             onNext={() => void openBatchConfirmation()}
             />
@@ -3705,6 +3833,7 @@ export default function App() {
             historyFiles={historyFiles}
             libraryFile={libraryFile}
             detailCloseupFiles={detailCloseupFiles}
+            watermarkedUploads={watermarkedUploads}
             reason={reason}
             remark={remark}
             operatorName={operatorName}

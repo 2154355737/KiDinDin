@@ -29,6 +29,7 @@ const SAFE_LOCAL_STORAGE_KEYS = new Set([
   "kidindin.app-settings.v1",
   "kidindin.default-operator-name",
   "kidindin.home-floor-grouping-state.v1",
+  "kidindin.backup-history.v1",
 ]);
 const SAFE_LOCAL_STORAGE_PREFIXES = [
   "kidindin.auto-refresh-at:",

@@ -401,6 +401,11 @@ html[data-theme="dark"] #root {
   background: #173527;
 }
 
+.theme-dark .resident-security-prefill-badge {
+  color: #64b5f6;
+  background: #1a2b3d;
+}
+
 .theme-dark .status-关闭失败,
 .theme-dark .status-日志失败,
 .theme-dark .status-failed {

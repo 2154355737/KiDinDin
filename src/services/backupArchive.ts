@@ -29,7 +29,7 @@ import {
   utf8ByteLength,
 } from "./backupArchiveFormat";
 
-const ARCHIVE_EXTENSION = ".kidindin-backup";
+const ARCHIVE_EXTENSION = ".kidbackup";
 const MAX_ARCHIVE_LINE_BYTES = 96 * 1024 * 1024;
 const MAX_ARCHIVE_DATABASES = 4;
 const MAX_ARCHIVE_RECORDS = 800_000;
@@ -276,7 +276,7 @@ async function createArchiveOutput(fileName: string): Promise<ArchiveOutput> {
     suggestedName: fileName,
     types: [{
       accept: { "application/x-ndjson": [ARCHIVE_EXTENSION] },
-      description: "KiDinDin 流式完整备份",
+      description: "KiDinDin 流式备份",
     }],
   });
   const writable = await handle.createWritable();

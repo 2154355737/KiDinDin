@@ -40,7 +40,6 @@ struct CisSession {
     employee_number: Option<String>,
     expires_at: Option<i64>,
 }
-
 #[derive(Clone, Deserialize, Serialize)]
 struct AuthHistoryEntry {
     id: String,
@@ -121,11 +120,6 @@ struct DownloadedFile {
     base64: String,
     mime: String,
     name: String,
-}
-
-fn random_jpeg_file_name() -> String {
-    let random_part = Uuid::new_v4().simple().to_string();
-    format!("MIe{}.jpg", &random_part[..20])
 }
 
 #[derive(Serialize)]
@@ -515,17 +509,17 @@ async fn cis_download_file(
     image_state: State<'_, vacant_room::VacantRoomImageState>,
 ) -> Result<DownloadedFile, String> {
     if path.trim().is_empty() { return Err("图片下载地址为空".into()); }
-    let (bytes, format, _mime) = image_state.download_image(&path).await?;
-    // 自动历史照片在上传前统一走增广；CPU 密集处理不占用异步请求线程。
-    let augmented = tauri::async_runtime::spawn_blocking(move || {
-        crate::img_augment::augment_image(&bytes, format)
-    })
-    .await
-    .map_err(|error| format!("图片增广任务异常终止：{error}"))??;
+    let (bytes, format, mime) = image_state.download_image(&path).await?;
+    let extension = match format {
+        image::ImageFormat::Jpeg => "jpg",
+        image::ImageFormat::Png => "png",
+        image::ImageFormat::WebP => "webp",
+        _ => "img",
+    };
     Ok(DownloadedFile {
-        base64: STANDARD.encode(&augmented),
-        mime: "image/jpeg".into(),
-        name: random_jpeg_file_name(),
+        base64: STANDARD.encode(bytes),
+        mime: mime.into(),
+        name: format!("cis-image-{}.{}", Uuid::new_v4().simple(), extension),
     })
 }
 
@@ -551,6 +545,7 @@ async fn cis_upload_files(
     files: Vec<UploadFile>,
     biz_id: Option<String>,
     add_watermark: Option<bool>,
+    watermark_address: Option<String>,
     state: State<'_, CisState>,
 ) -> Result<Value, String> {
     if files.is_empty() {
@@ -565,6 +560,7 @@ async fn cis_upload_files(
         )
         .text("bizId", biz_id.unwrap_or_default())
         .text("isIphone", "false")
+        .text("address", watermark_address.unwrap_or_default())
         .text(
             "addWatermark",
             if security_watermark { "true" } else { "false" },
@@ -638,22 +634,4 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
-}
-
-#[cfg(test)]
-mod tests {
-    use super::random_jpeg_file_name;
-
-    #[test]
-    fn jpeg_file_name_is_random_and_matches_reencoded_content() {
-        let first = random_jpeg_file_name();
-        let second = random_jpeg_file_name();
-        assert_ne!(first, second);
-        for name in [first, second] {
-            assert_eq!(name.len(), 27);
-            assert!(name.starts_with("MIe"));
-            assert!(name.ends_with(".jpg"));
-            assert!(name[3..23].chars().all(|character| character.is_ascii_hexdigit()));
-        }
-    }
 }

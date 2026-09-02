@@ -186,7 +186,7 @@ export function UploadFilePicker({
         </label>
       ) : null}
       <label className="file-picker">
-        <span>{file?.name || placeholder}</span>
+        <span title={file?.name || placeholder}>{file?.name || placeholder}</span>
         <input
           key={inputKey}
           type="file"
@@ -256,6 +256,39 @@ export function FilePreview({
         <ImagePreviewDialog
           fileName={file?.name || label}
           label={label}
+          url={url}
+          onClose={() => setPreviewOpen(false)}
+        />
+      ) : null}
+    </>
+  );
+}
+
+export function WatermarkedFilePreview({
+  file,
+  label,
+}: {
+  file: File | null | undefined;
+  label: string;
+}) {
+  const url = useFilePreviewUrl(file);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        className="file-preview watermarked-file-preview"
+        disabled={!url}
+        onClick={() => setPreviewOpen(true)}
+        aria-label={url ? `放大确认已添加水印的${label}` : `${label}水印预览未就绪`}
+      >
+        {url ? <img src={url} alt={`已添加水印的${label}`} /> : <span>预览未就绪</span>}
+        <small>{label} · 水印</small>
+      </button>
+      {previewOpen && url ? (
+        <ImagePreviewDialog
+          fileName={file?.name || label}
+          label={`${label}（已添加水印）`}
           url={url}
           onClose={() => setPreviewOpen(false)}
         />

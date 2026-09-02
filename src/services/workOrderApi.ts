@@ -347,7 +347,7 @@ export function bindSupplyPointScanAddress(
 export async function uploadWorkOrderFiles(
   files: File[],
   bizId = "",
-  options: { securityWatermark?: boolean } = {},
+  options: { securityWatermark?: boolean; watermarkAddress?: string } = {},
 ) {
   const requestStartedAt = Date.now();
   const nativeFiles = await Promise.all(files.map(fileToNativeUpload));
@@ -360,6 +360,7 @@ export async function uploadWorkOrderFiles(
         addWatermark: Boolean(options.securityWatermark),
         bizId: bizId || null,
         files: nativeFiles,
+        watermarkAddress: options.watermarkAddress?.trim() || null,
       },
     );
   } catch (error) {

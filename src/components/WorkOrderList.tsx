@@ -196,6 +196,7 @@ export function WorkOrderList({
   selected = [],
   selectionDisabled = false,
   storefrontPrefilledOrderHeaderIds = [],
+  residentSecurityPrefilledOrderHeaderIds = [],
   signedOrderHeaderIds = [],
   localMetaById = {},
   groupByFloor = false,
@@ -214,6 +215,7 @@ export function WorkOrderList({
   selected?: string[];
   selectionDisabled?: boolean;
   storefrontPrefilledOrderHeaderIds?: readonly string[];
+  residentSecurityPrefilledOrderHeaderIds?: readonly string[];
   signedOrderHeaderIds?: readonly string[];
   localMetaById?: Record<string, LocalWorkOrderMeta>;
   groupByFloor?: boolean;
@@ -236,6 +238,10 @@ export function WorkOrderList({
   const storefrontPrefilledIds = useMemo(
     () => new Set(storefrontPrefilledOrderHeaderIds),
     [storefrontPrefilledOrderHeaderIds],
+  );
+  const residentSecurityPrefilledIds = useMemo(
+    () => new Set(residentSecurityPrefilledOrderHeaderIds),
+    [residentSecurityPrefilledOrderHeaderIds],
   );
   const signedIds = useMemo(
     () => new Set(signedOrderHeaderIds),
@@ -726,6 +732,7 @@ export function WorkOrderList({
     const localMeta = localMetaById[order.woHeaderId];
     const isSelected = selectedIds.has(order.id);
     const isStorefrontPrefilled = storefrontPrefilledIds.has(order.woHeaderId);
+    const isResidentSecurityPrefilled = residentSecurityPrefilledIds.has(order.woHeaderId);
     const isSigned = signedIds.has(order.woHeaderId);
     const isSwipeRow = swipeVisual.orderKey === orderKey;
     const swipeOffset = isSwipeRow ? swipeVisual.offsetX : 0;
@@ -888,6 +895,15 @@ export function WorkOrderList({
                   >
                     <Icon name="camera" size={10} />
                     到访预填
+                  </span>
+                ) : null}
+                {isResidentSecurityPrefilled ? (
+                  <span
+                    className="resident-security-prefill-badge"
+                    title="已预填居民安检历史数据"
+                  >
+                    <Icon name="check" size={10} />
+                    已预填
                   </span>
                 ) : null}
                 <StatusBadge status={order.status} />

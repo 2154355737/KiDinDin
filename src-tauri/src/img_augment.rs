@@ -3,7 +3,7 @@ use rand::Rng;
 
 const MAX_PROCESSING_EDGE: u32 = 2_048;
 
-/// 对图片进行随机增广：裁剪、左右翻转、调色、加噪，统一重编码为 JPEG。
+/// 对图片进行随机增广：裁剪、调色、加噪，统一重编码为 JPEG。
 /// 每次调用产生不同结果，用于规避后端重复图片检测。
 pub fn augment_image(bytes: &[u8], format: ImageFormat) -> Result<Vec<u8>, String> {
     let image = image::load_from_memory_with_format(bytes, format)
@@ -44,19 +44,16 @@ fn render_augmented_image(image: &DynamicImage) -> Result<(Vec<u8>, RgbImage), S
     // 1. 随机裁剪：保留 92%-100% 面积，随机偏移
     image = random_crop(image, &mut rng);
 
-    // 2. 固定左右镜像，不再进行上下翻转
-    image = image.fliph();
-
-    // 3. 色相轻微偏移
+    // 2. 色相轻微偏移；保留原图的左右方向。
     let hue: i32 = rng.gen_range(-8..=8); // 色相微小偏移
     image = image.huerotate(hue);
 
-    // 4. 在一次像素遍历中完成亮度、对比度和噪声调整
+    // 3. 在一次像素遍历中完成亮度、对比度和噪声调整
     let brightness: i16 = rng.gen_range(-20..=20);
     let contrast_percent: i16 = rng.gen_range(90..=110);
     let rgb = adjust_color_and_add_noise(image, brightness, contrast_percent, &mut rng);
 
-    // 5. JPEG 重编码，质量 70-90 随机（默认清除 EXIF）
+    // 4. JPEG 重编码，质量 70-90 随机（默认清除 EXIF）
     let quality: u8 = rng.gen_range(70..=90);
     let mut output = Vec::new();
     let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut output, quality);
@@ -203,7 +200,7 @@ mod tests {
     }
 
     #[test]
-    fn augmentation_always_flips_left_and_right() {
+    fn augmentation_preserves_left_and_right() {
         let mut source = RgbImage::new(200, 100);
         for (x, _y, pixel) in source.enumerate_pixels_mut() {
             *pixel = if x < 100 {
@@ -217,7 +214,7 @@ mod tests {
         let decoded = image::load_from_memory(&output).unwrap().to_rgb8();
         let left = decoded.get_pixel(2, decoded.height() / 2);
         let right = decoded.get_pixel(decoded.width() - 3, decoded.height() / 2);
-        assert!(left[2] > left[0], "左右翻转后左侧应来自原图蓝色右半区");
-        assert!(right[0] > right[2], "左右翻转后右侧应来自原图红色左半区");
+        assert!(left[0] > left[2], "增广后左侧应保持原图红色左半区");
+        assert!(right[2] > right[0], "增广后右侧应保持原图蓝色右半区");
     }
 }

@@ -1,0 +1,646 @@
+/* 备份与恢复页面样式 */
+
+.backup-restore-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--color-background);
+  overflow-y: auto;
+}
+
+.backup-restore-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.backup-restore-title {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.backup-restore-title small {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  font-weight: 500;
+}
+
+.backup-restore-title h1 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.backup-restore-state {
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.backup-restore-state.idle {
+  background: var(--color-success-light);
+  color: var(--color-success);
+}
+
+.backup-restore-state.busy {
+  background: var(--color-warning-light);
+  color: var(--color-warning);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.backup-restore-account {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 16px;
+  padding: 16px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+}
+
+.backup-restore-account-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  background: var(--color-primary-light);
+  border-radius: 12px;
+  color: var(--color-primary);
+}
+
+.backup-restore-account > div {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.backup-restore-account small {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.backup-restore-account b {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.backup-restore-account code {
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--color-text-tertiary);
+  background: var(--color-background);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.backup-restore-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0 16px 16px;
+}
+
+.backup-export-button,
+.backup-import-button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.backup-export-button:hover:not(:disabled),
+.backup-import-button:hover:not(:disabled) {
+  background: var(--color-primary-light);
+  border-color: var(--color-primary);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.backup-export-button:disabled,
+.backup-import-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.backup-export-button > span,
+.backup-import-button > span {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+}
+
+.backup-export-button b,
+.backup-import-button b {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.backup-export-button small,
+.backup-import-button small {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+/* 统计卡片样式 */
+.backup-stats-card {
+  margin: 0 16px 16px;
+  padding: 16px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+}
+
+.backup-stats-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  color: var(--color-primary);
+}
+
+.backup-stats-header h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.backup-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.backup-stat-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  background: var(--color-background);
+  border-radius: 8px;
+  transition: transform 0.2s;
+}
+
+.backup-stat-item:hover {
+  transform: scale(1.02);
+}
+
+.backup-stat-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background: var(--color-primary-light);
+  border-radius: 8px;
+  color: var(--color-primary);
+  flex-shrink: 0;
+}
+
+.backup-stat-item.success .backup-stat-icon {
+  background: var(--color-success-light);
+  color: var(--color-success);
+}
+
+.backup-stat-item.compression .backup-stat-icon {
+  background: var(--color-warning-light);
+  color: var(--color-warning);
+}
+
+.backup-stat-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.backup-stat-content small {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.backup-stat-content strong {
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 图表样式 */
+.backup-history-chart {
+  margin: 0 16px 16px;
+  padding: 16px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+}
+
+.backup-history-chart.empty {
+  text-align: center;
+  padding: 32px 16px;
+  color: var(--color-text-secondary);
+}
+
+.backup-chart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.backup-chart-header h4 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.backup-chart-period {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.backup-chart-container {
+  position: relative;
+}
+
+.backup-chart-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 120px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.backup-chart-bar-wrapper {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  height: 100%;
+}
+
+.backup-chart-bar {
+  width: 100%;
+  max-width: 12px;
+  background: var(--color-primary);
+  border-radius: 4px 4px 0 0;
+  transition: all 0.3s;
+  cursor: pointer;
+  position: relative;
+  min-height: 2px;
+}
+
+.backup-chart-bar:hover {
+  background: var(--color-primary-dark);
+  transform: scaleX(1.2);
+}
+
+.backup-chart-bar-value {
+  position: absolute;
+  top: -20px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  display: none;
+}
+
+.backup-chart-bar:hover .backup-chart-bar-value {
+  display: block;
+}
+
+.backup-chart-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  padding: 0 4px;
+}
+
+.backup-chart-label {
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  text-align: center;
+}
+
+.backup-chart-legend {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  text-align: center;
+}
+
+/* 进度卡片样式 */
+.backup-progress-card {
+  margin: 0 16px 16px;
+  padding: 16px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+}
+
+.backup-progress-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.backup-progress-heading span {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.backup-progress-heading strong {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-primary);
+}
+
+.backup-progress-card progress {
+  width: 100%;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+
+.backup-progress-card progress.indeterminate {
+  animation: progress-indeterminate 1.5s ease-in-out infinite;
+}
+
+@keyframes progress-indeterminate {
+  0% { background-position: -200px 0; }
+  100% { background-position: 200px 0; }
+}
+
+.backup-progress-card p {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  margin: 0 0 12px;
+}
+
+.backup-progress-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.backup-progress-metrics > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.backup-progress-metrics dt {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  font-weight: 500;
+}
+
+.backup-progress-metrics dd {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0;
+}
+
+/* 检查结果卡片 */
+.backup-inspection-card {
+  margin: 0 16px 16px;
+  padding: 16px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-success);
+  border-radius: 12px;
+}
+
+.backup-inspection-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.backup-inspection-heading > span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: var(--color-success-light);
+  border-radius: 8px;
+  color: var(--color-success);
+  flex-shrink: 0;
+}
+
+.backup-inspection-heading > div {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.backup-inspection-heading small {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.backup-inspection-heading b {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.backup-inspection-heading em {
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  font-style: normal;
+}
+
+.backup-inspection-summary {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.backup-inspection-summary > div {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px;
+  background: var(--color-background);
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.backup-inspection-summary dt {
+  color: var(--color-text-secondary);
+  font-weight: 500;
+}
+
+.backup-inspection-summary dd {
+  font-weight: 600;
+  margin: 0;
+}
+
+.backup-source-account,
+.backup-history-accounts {
+  margin-bottom: 12px;
+  padding: 12px;
+  background: var(--color-background);
+  border-radius: 8px;
+}
+
+.backup-source-account small,
+.backup-history-accounts small {
+  display: block;
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  margin-bottom: 6px;
+}
+
+.backup-source-account b {
+  display: block;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.backup-source-account code,
+.backup-history-accounts code {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--color-text-secondary);
+}
+
+.backup-history-accounts ul {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.backup-history-accounts li code {
+  display: block;
+  padding: 4px 8px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+}
+
+.backup-native-warning {
+  padding: 12px;
+  background: var(--color-error-light);
+  border-left: 3px solid var(--color-error);
+  border-radius: 6px;
+  color: var(--color-error);
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+.backup-restore-confirm-button {
+  width: 100%;
+}
+
+/* 隐私说明 */
+.backup-privacy-notice {
+  display: flex;
+  gap: 12px;
+  margin: 0 16px 16px;
+  padding: 16px;
+  background: var(--color-info-light);
+  border-left: 3px solid var(--color-info);
+  border-radius: 8px;
+}
+
+.backup-privacy-notice > span {
+  flex-shrink: 0;
+  color: var(--color-info);
+}
+
+.backup-privacy-notice > div {
+  flex: 1;
+}
+
+.backup-privacy-notice b {
+  display: block;
+  font-size: 14px;
+  margin-bottom: 6px;
+  color: var(--color-info);
+}
+
+.backup-privacy-notice p {
+  font-size: 13px;
+  color: var(--color-text);
+  margin: 0 0 8px;
+  line-height: 1.5;
+}
+
+.backup-privacy-notice small {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  line-height: 1.4;
+}
+
+/* 通知消息 */
+.backup-restore-notice {
+  margin: 0 16px 16px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.backup-restore-notice.info {
+  background: var(--color-info-light);
+  color: var(--color-info);
+}
+
+.backup-restore-notice.success {
+  background: var(--color-success-light);
+  color: var(--color-success);
+}
+
+.backup-restore-notice.warning {
+  background: var(--color-warning-light);
+  color: var(--color-warning);
+}
+
+.backup-restore-notice.error {
+  background: var(--color-error-light);
+  color: var(--color-error);
+}

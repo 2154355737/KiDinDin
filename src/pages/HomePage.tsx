@@ -93,6 +93,7 @@ export function HomePage({
   date,
   localMetaById,
   storefrontPrefilledOrderHeaderIds = [],
+  residentSecurityPrefilledOrderHeaderIds = [],
   signedOrderHeaderIds = [],
   collapsedFloorGroupKeys = [],
   activeFilterCount = 0,
@@ -115,6 +116,7 @@ export function HomePage({
   date: string;
   localMetaById: Record<string, LocalWorkOrderMeta>;
   storefrontPrefilledOrderHeaderIds?: readonly string[];
+  residentSecurityPrefilledOrderHeaderIds?: readonly string[];
   signedOrderHeaderIds?: readonly string[];
   collapsedFloorGroupKeys?: readonly string[];
   activeFilterCount?: number;
@@ -243,6 +245,7 @@ export function HomePage({
         collapsedFloorGroupKeys={collapsedFloorGroupKeys}
         localMetaById={localMetaById}
         storefrontPrefilledOrderHeaderIds={storefrontPrefilledOrderHeaderIds}
+        residentSecurityPrefilledOrderHeaderIds={residentSecurityPrefilledOrderHeaderIds}
         signedOrderHeaderIds={signedOrderHeaderIds}
         onDetail={onDetail}
         onCollapsedFloorGroupKeysChange={onCollapsedFloorGroupKeysChange}

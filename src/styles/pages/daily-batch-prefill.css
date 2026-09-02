@@ -1,0 +1,248 @@
+/* 当天工单一键预填页面样式 - 复用 vacant-room-fill 样式并适配主题 */
+
+/* 状态卡片样式 */
+.vacant-fill-status {
+  padding: 10px 11px;
+}
+
+.vacant-fill-status-card {
+  padding: 11px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--card-background);
+}
+
+.vacant-fill-status-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.vacant-fill-status-header > span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.vacant-fill-status-header b {
+  color: var(--text-primary);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.vacant-fill-status-header em {
+  padding: 3px 8px;
+  border-radius: 8px;
+  font-size: 7px;
+  font-style: normal;
+  font-weight: 750;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.vacant-fill-status-header .batch-status-idle {
+  background: var(--surface-secondary);
+  color: var(--text-secondary);
+}
+
+.vacant-fill-status-header .batch-status-inspecting,
+.vacant-fill-status-header .batch-status-saving {
+  background: var(--accent-soft);
+  color: var(--accent);
+  animation: pulse-batch 2s ease-in-out infinite;
+}
+
+.vacant-fill-status-header .batch-status-ready {
+  background: rgba(255, 193, 7, 0.12);
+  color: #ffc107;
+}
+
+.vacant-fill-status-header .batch-status-paused {
+  background: rgba(255, 152, 0, 0.12);
+  color: #ff9800;
+}
+
+.vacant-fill-status-header .batch-status-completed {
+  background: rgba(33, 167, 108, 0.12);
+  color: #21a76c;
+}
+
+.vacant-fill-status-header .batch-status-error {
+  background: rgba(219, 86, 86, 0.11);
+  color: #db5656;
+}
+
+@keyframes pulse-batch {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+.vacant-fill-status-message {
+  color: var(--text-secondary);
+  font-size: 8px;
+  line-height: 1.5;
+  margin: 0 0 8px;
+}
+
+/* 进度条样式 */
+.vacant-fill-progress {
+  margin-top: 8px;
+}
+
+.vacant-fill-progress-bar {
+  height: 6px;
+  background: var(--surface-secondary);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+
+.vacant-fill-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--accent-hover));
+  transition: width 0.3s ease;
+  border-radius: 10px;
+}
+
+.vacant-fill-progress-stats {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 7px;
+}
+
+.vacant-fill-progress-stats span {
+  color: var(--text-secondary);
+}
+
+.vacant-fill-progress-stats b {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.vacant-fill-progress-stats .stat-success {
+  color: #21a76c;
+}
+
+.vacant-fill-progress-stats .stat-success b {
+  color: #21a76c;
+}
+
+.vacant-fill-progress-stats .stat-skip {
+  color: #ffc107;
+}
+
+.vacant-fill-progress-stats .stat-skip b {
+  color: #ffc107;
+}
+
+.vacant-fill-progress-stats .stat-error {
+  color: #db5656;
+}
+
+.vacant-fill-progress-stats .stat-error b {
+  color: #db5656;
+}
+
+/* 结果列表样式 */
+.vacant-fill-results {
+  padding: 0 11px 10px;
+}
+
+.vacant-fill-results header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0 6px;
+  margin-bottom: 6px;
+}
+
+.vacant-fill-results header > span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.vacant-fill-results header b {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.vacant-fill-results header small {
+  color: var(--text-secondary);
+  font-size: 8px;
+}
+
+.vacant-fill-result-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.vacant-fill-result-card {
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-left-width: 3px;
+  border-radius: 9px;
+  background: var(--card-background);
+}
+
+.vacant-fill-result-card.success {
+  border-left-color: rgba(33, 167, 108, 0.46);
+}
+
+.vacant-fill-result-card.skipped {
+  border-left-color: rgba(255, 193, 7, 0.42);
+  opacity: 0.78;
+}
+
+.vacant-fill-result-card.error {
+  border-left-color: rgba(219, 86, 86, 0.42);
+}
+
+.vacant-fill-result-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.vacant-fill-result-header b {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.vacant-fill-result-header span {
+  font-size: 6px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono, monospace);
+}
+
+.vacant-fill-result-detail {
+  font-size: 7px;
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.vacant-fill-result-detail.error-message {
+  color: #db5656;
+}
+
+/* 暂停按钮样式 */
+.pause-button {
+  background: #ff9800 !important;
+  color: white !important;
+}
+
+.pause-button:hover:not(:disabled) {
+  background: #fb8c00 !important;
+}

@@ -14,6 +14,7 @@
 @import "./pages/all-work-orders.css";
 @import "./pages/vacant-room.css";
 @import "./pages/vacant-room-fill.css";
+@import "./pages/daily-batch-prefill.css";
 @import "./pages/visit-verify.css";
 @import "./pages/image-encoding.css";
 @import "./pages/signature.css";
@@ -28,5 +29,6 @@
 @import "./components/drawer.css";
 @import "./components/work-order-interactions.css";
 @import "./pages/home-filters.css";
+@import "./pages/backup-restore.css";
 @import "./themes/dark.css";
 @import "./themes/palettes.css";

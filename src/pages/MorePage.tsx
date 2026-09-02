@@ -9,6 +9,7 @@ export type MorePageProps = {
   onOpenBatchSubmit: () => void;
   onOpenAllWorkOrders: () => void;
   onOpenResidentSecurityPrefill: () => void;
+  onOpenDailyBatchPrefill: () => void;
   onOpenVacantRoomFill: () => void;
   onOpenVacantRoom: () => void;
   onOpenLogAudit: () => void;
@@ -32,6 +33,7 @@ export function MorePage({
   onOpenBatchSubmit,
   onOpenAllWorkOrders,
   onOpenResidentSecurityPrefill,
+  onOpenDailyBatchPrefill,
   onOpenVacantRoomFill,
   onOpenVacantRoom,
   onOpenLogAudit,
@@ -99,6 +101,11 @@ export function MorePage({
         <button type="button" className="more-feature-card" onClick={onOpenResidentSecurityPrefill}>
           <span className="more-feature-icon"><Icon name="audit" size={21} /></span>
           <span className="more-feature-copy"><b>安检预填</b><small>复用上一年居民安检选项及批准文本</small></span>
+          <Icon name="chevron" size={18} />
+        </button>
+        <button type="button" className="more-feature-card" onClick={onOpenDailyBatchPrefill}>
+          <span className="more-feature-icon"><Icon name="tasks" size={21} /></span>
+          <span className="more-feature-copy"><b>当天工单一键预填</b><small>批量预存当天所有居民安检工单</small></span>
           <Icon name="chevron" size={18} />
         </button>
         <button type="button" className="more-feature-card" onClick={onOpenVacantRoom}>

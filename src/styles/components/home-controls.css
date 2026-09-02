@@ -448,6 +448,24 @@
   flex: none;
 }
 
+.resident-security-prefill-badge {
+  display: flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 8px;
+  background: #e3f2fd;
+  color: #1976d2;
+  font-size: 7px;
+  font-weight: 750;
+  gap: 4px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.resident-security-prefill-badge .icon {
+  flex: none;
+}
+
 .status-待准备 {
   color: #687990;
   background: #edf1f6;

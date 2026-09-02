@@ -1215,3 +1215,92 @@ export async function saveResidentSecurityGasMeterPhotoOnly(
   await attachGasMeterPhoto(prepared, gasMeterPhoto);
   return savePreparedResidentSecurityPrefill(order, prepared);
 }
+
+export type BatchPrefillResult = {
+  error: string | null;
+  historyWoHeaderId: string;
+  historyWoNumber: string;
+  historyYear: number;
+  prefillCount: number;
+  saved: boolean;
+  unit: string;
+  woHeaderId: string;
+  woNumber: string;
+};
+
+export async function batchInspectResidentSecurityPrefill(
+  orders: WorkOrder[],
+): Promise<BatchPrefillResult[]> {
+  const results: BatchPrefillResult[] = [];
+
+  for (const order of orders) {
+    try {
+      const preview = await inspectResidentSecurityPrefill(order);
+      results.push({
+        error: null,
+        historyWoHeaderId: preview.historyWoHeaderId,
+        historyWoNumber: preview.historyWoNumber,
+        historyYear: preview.historyYear,
+        prefillCount: preview.prefillCount,
+        saved: false,
+        unit: order.unit,
+        woHeaderId: order.woHeaderId,
+        woNumber: order.woNumber,
+      });
+    } catch (error) {
+      results.push({
+        error: error instanceof Error ? error.message : "检查失败",
+        historyWoHeaderId: "",
+        historyWoNumber: "",
+        historyYear: 0,
+        prefillCount: 0,
+        saved: false,
+        unit: order.unit,
+        woHeaderId: order.woHeaderId,
+        woNumber: order.woNumber,
+      });
+    }
+  }
+
+  return results;
+}
+
+export async function batchSaveResidentSecurityPrefill(
+  inspectedResults: BatchPrefillResult[],
+): Promise<BatchPrefillResult[]> {
+  const results: BatchPrefillResult[] = [];
+
+  for (const inspected of inspectedResults) {
+    if (inspected.error !== null || inspected.prefillCount === 0) {
+      results.push({ ...inspected });
+      continue;
+    }
+
+    const order = {
+      woHeaderId: inspected.woHeaderId,
+      woNumber: inspected.woNumber,
+      unit: inspected.unit,
+    } as WorkOrder;
+
+    try {
+      const saved = await saveResidentSecurityPrefill(
+        order,
+        inspected.historyWoHeaderId,
+      );
+      results.push({
+        ...inspected,
+        error: null,
+        prefillCount: saved.prefillCount,
+        saved: saved.prefillCount > 0,
+      });
+    } catch (error) {
+      results.push({
+        ...inspected,
+        error: error instanceof Error ? error.message : "预存失败",
+        saved: false,
+      });
+    }
+  }
+
+  return results;
+}

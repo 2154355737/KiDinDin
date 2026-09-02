@@ -124,6 +124,10 @@
   margin-bottom: 11px;
 }
 
+.section-heading > div {
+  min-width: 0;
+}
+
 .section-heading h3 {
   margin: 0;
   font-size: 14px;
@@ -133,6 +137,7 @@
   color: #76869d;
   font-size: 11px;
   margin: 3px 0 0;
+  overflow-wrap: anywhere;
 }
 
 .section-heading>b {
@@ -163,6 +168,25 @@
 .workflow-file-picker {
   display: grid;
   gap: 8px;
+  min-width: 0;
+}
+
+/* Long device-generated file names must never push the action outside the page. */
+.workflow-file-picker .file-picker {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 94px;
+  min-width: 0;
+}
+
+.workflow-file-picker .file-picker span {
+  min-width: 0;
+}
+
+.workflow-file-picker .file-picker input {
+  width: 94px;
+  min-width: 0;
+  max-width: 94px;
+  overflow: hidden;
 }
 
 .native-camera-picker {
@@ -612,6 +636,27 @@
 .mini-photos {
   display: flex;
   gap: 5px;
+}
+
+.watermarked-file-preview {
+  outline: 2px solid rgb(20 125 88 / 55%);
+  outline-offset: 1px;
+}
+
+.watermarked-file-preview small {
+  color: #fff;
+  background: rgb(12 108 75 / 92%);
+}
+
+.watermark-address {
+  color: #28735d !important;
+  font-size: 10px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.theme-dark .watermark-address {
+  color: #84d7b7 !important;
 }
 
 .mini-photos .photo-tile {
