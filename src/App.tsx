@@ -52,6 +52,7 @@ import {
   type CisWorkOrder,
   type UploadedFile,
   type WorkOrderDetail,
+  type WorkOrderUploadTiming,
 } from "./services/workOrderApi";
 import {
   consumePendingPrefillTarget,
@@ -217,6 +218,11 @@ const ConfirmPage = lazy(() =>
     default: module.ConfirmPage,
   })),
 );
+const WatermarkDebugPanel = lazy(() =>
+  import("./pages/WorkflowPages").then((module) => ({
+    default: module.WatermarkDebugPanel,
+  })),
+);
 const RunningPage = lazy(() =>
   import("./pages/WorkflowPages").then((module) => ({
     default: module.RunningPage,
@@ -350,8 +356,20 @@ type HistoryPhotoStatus = "idle" | "loading" | "ready" | "error";
 type WatermarkedOrderUpload = {
   address: string;
   bizId: string;
-  previewFiles: File[];
+  previewFiles: [File, File];
   sourceFiles: [File, File];
+  watermarked: true;
+};
+
+type WatermarkPreparationState = {
+  debug?: WatermarkDebugStep[];
+  message: string;
+  status: "pending" | "waiting" | "generating" | "ready" | "error";
+};
+
+type WatermarkDebugStep = {
+  durationMs: number;
+  label: string;
 };
 
 function registeredWatermarkAddress(order: WorkOrder) {
@@ -364,6 +382,27 @@ function registeredWatermarkAddress(order: WorkOrder) {
     throw new Error(`${order.woNumber || order.id} 缺少可用于水印的工单登记地址`);
   }
   return address;
+}
+
+function isReusableWatermarkedUpload(
+  order: WorkOrder,
+  uploaded: WatermarkedOrderUpload | undefined,
+  storefrontFile: File | undefined,
+  detailFile: File | undefined,
+) {
+  if (!uploaded) return false;
+  try {
+    return (
+      uploaded.watermarked === true &&
+      Boolean(uploaded.bizId.trim()) &&
+      uploaded.previewFiles.length === 2 &&
+      uploaded.address === registeredWatermarkAddress(order) &&
+      uploaded.sourceFiles[0] === storefrontFile &&
+      uploaded.sourceFiles[1] === detailFile
+    );
+  } catch {
+    return false;
+  }
 }
 
 function batchImageEntries(
@@ -547,6 +586,12 @@ function photoBizIds(order: Record<string, unknown>) {
 
 const wait = (milliseconds: number) =>
   new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
+
+function randomIntervalSeconds(minSeconds: number, maxSeconds: number) {
+  const minimum = Math.min(minSeconds, maxSeconds);
+  const maximum = Math.max(minSeconds, maxSeconds);
+  return minimum + Math.floor(Math.random() * (maximum - minimum + 1));
+}
 
 function today() {
   const now = new Date();
@@ -774,6 +819,13 @@ export default function App() {
   const [watermarkedUploads, setWatermarkedUploads] = useState<
     Record<string, WatermarkedOrderUpload>
   >({});
+  const [watermarkPreparationByOrder, setWatermarkPreparationByOrder] =
+    useState<Record<string, WatermarkPreparationState>>({});
+  const [watermarkPreparationRunning, setWatermarkPreparationRunning] =
+    useState(false);
+  const [watermarkPreparationMessage, setWatermarkPreparationMessage] =
+    useState("等待进入确认页");
+  const watermarkPreparationSequenceRef = useRef(0);
   const [storefrontPrefilledOrderIds, setStorefrontPrefilledOrderIds] =
     useState<string[]>([]);
   const [storefrontPrefilledOrderHeaderIds, setStorefrontPrefilledOrderHeaderIds] =
@@ -933,6 +985,24 @@ export default function App() {
         sortDirection,
       ),
     [orders, selected, sortDirection, sortField],
+  );
+  const watermarkedUploadsReady = useMemo(
+    () =>
+      selectedOrders.length > 0 &&
+      selectedOrders.every((order) =>
+        isReusableWatermarkedUpload(
+          order,
+          watermarkedUploads[order.id],
+          historyFiles[order.id],
+          detailCloseupFiles[order.id],
+        ),
+      ),
+    [
+      detailCloseupFiles,
+      historyFiles,
+      selectedOrders,
+      watermarkedUploads,
+    ],
   );
   const allManualReadyByOrder = useMemo(
     () =>
@@ -2447,6 +2517,206 @@ export default function App() {
     }
   };
 
+  const prepareWatermarkedUploads = async (
+    ordersToPrepare: readonly WorkOrder[],
+  ) => {
+    const sequence = watermarkPreparationSequenceRef.current + 1;
+    watermarkPreparationSequenceRef.current = sequence;
+    if (!ordersToPrepare.length) {
+      setWatermarkedUploads({});
+      setWatermarkPreparationByOrder({});
+      setWatermarkPreparationRunning(false);
+      setWatermarkPreparationMessage("当前没有可生成水印的工单");
+      return;
+    }
+    setWatermarkPreparationRunning(true);
+    setWatermarkPreparationMessage(
+      `正在按顺序准备 1/${ordersToPrepare.length} 个工单的水印预览…`,
+    );
+
+    const nextWatermarkedUploads: Record<string, WatermarkedOrderUpload> = {};
+    const readyOrderIds = new Set<string>();
+    const initialPreparation = Object.fromEntries(
+      ordersToPrepare.map((order) => {
+        const existing = watermarkedUploads[order.id];
+        const reusable = isReusableWatermarkedUpload(
+          order,
+          existing,
+          historyFiles[order.id],
+          detailCloseupFiles[order.id],
+        );
+        if (reusable && existing) {
+          nextWatermarkedUploads[order.id] = existing;
+          readyOrderIds.add(order.id);
+        }
+        return [
+          order.id,
+          {
+            status: reusable ? "ready" : "pending",
+            message: reusable ? "已复用本次确认的水印图片" : "等待生成",
+          } satisfies WatermarkPreparationState,
+        ];
+      }),
+    );
+    setWatermarkedUploads(nextWatermarkedUploads);
+    setWatermarkPreparationByOrder(initialPreparation);
+
+    let requestCount = 0;
+    for (let index = 0; index < ordersToPrepare.length; index += 1) {
+      if (watermarkPreparationSequenceRef.current !== sequence) return;
+      const order = ordersToPrepare[index];
+      if (readyOrderIds.has(order.id)) continue;
+
+      const storefrontFile = historyFiles[order.id];
+      const detailFile = detailCloseupFiles[order.id];
+      const label = order.woNumber || order.id;
+      if (!storefrontFile || !detailFile) {
+        setWatermarkPreparationByOrder((current) => ({
+          ...current,
+          [order.id]: { status: "error", message: "缺少两张提交图片" },
+        }));
+        continue;
+      }
+
+      if (requestCount > 0 && submitIntervalMaxSeconds > 0) {
+        const delaySeconds = randomIntervalSeconds(
+          submitIntervalMinSeconds,
+          submitIntervalMaxSeconds,
+        );
+        setWatermarkPreparationByOrder((current) => ({
+          ...current,
+          [order.id]: {
+            status: "waiting",
+            message: `等待 ${delaySeconds} 秒后生成`,
+          },
+        }));
+        setWatermarkPreparationMessage(
+          `已准备 ${readyOrderIds.size}/${ordersToPrepare.length} 单，复用图片间隔等待 ${delaySeconds} 秒…`,
+        );
+        await wait(delaySeconds * 1000);
+        if (watermarkPreparationSequenceRef.current !== sequence) return;
+      }
+      requestCount += 1;
+
+      setWatermarkPreparationByOrder((current) => ({
+        ...current,
+        [order.id]: { status: "generating", message: "正在生成水印预览" },
+      }));
+      setWatermarkPreparationMessage(
+        `正在生成 ${index + 1}/${ordersToPrepare.length}：${label} 的水印预览…`,
+      );
+
+      const debugEnabled = appSettings.diagnostics.showWatermarkGenerationDebug;
+      const debugSteps: WatermarkDebugStep[] = [];
+      const appendDebugStep = (stepLabel: string, durationMs: number) => {
+        if (!debugEnabled) return;
+        debugSteps.push({
+          durationMs: Math.max(0, Math.round(durationMs)),
+          label: stepLabel,
+        });
+        setWatermarkPreparationByOrder((current) => ({
+          ...current,
+          [order.id]: {
+            ...(current[order.id] ?? { status: "generating", message: "正在生成水印预览" }),
+            debug: [...debugSteps],
+          },
+        }));
+      };
+      const measureDebugStep = async <T,>(
+        stepLabel: string,
+        operation: () => Promise<T>,
+      ) => {
+        if (!debugEnabled) return operation();
+        const startedAt = performance.now();
+        try {
+          return await operation();
+        } finally {
+          appendDebugStep(stepLabel, performance.now() - startedAt);
+        }
+      };
+      const totalStartedAt = performance.now();
+
+      try {
+        const address = registeredWatermarkAddress(order);
+        const uploaded = await uploadWorkOrderFiles(
+          [storefrontFile, detailFile],
+          "",
+          {
+            debugTiming: debugEnabled,
+            onTiming: debugEnabled
+              ? (timing: WorkOrderUploadTiming) =>
+                  appendDebugStep(timing.label, timing.durationMs)
+              : undefined,
+            securityWatermark: true,
+            watermarkAddress: address,
+          },
+        );
+        let attachments = (uploaded.data.sysAttachList ?? []).filter((file) =>
+          String(file.downloadFilePath ?? "").trim(),
+        );
+        if (attachments.length < 2) {
+          attachments = (
+            await measureDebugStep("补充查询水印附件列表", () =>
+              fetchWorkOrderFiles(uploaded.data.bizId),
+            )
+          ).filter((file) => String(file.downloadFilePath ?? "").trim());
+        }
+        if (attachments.length !== 2) {
+          throw new Error(
+            `水印附件组应恰好包含两张图片，实际返回 ${attachments.length} 张`,
+          );
+        }
+        const [storefrontPreview, detailPreview] = await measureDebugStep(
+          "并行下载两张水印预览",
+          () =>
+            Promise.all(
+              attachments.map((attachment) => downloadWorkOrderFile(attachment)),
+            ),
+        );
+        appendDebugStep("本工单总耗时", performance.now() - totalStartedAt);
+        if (watermarkPreparationSequenceRef.current !== sequence) return;
+        nextWatermarkedUploads[order.id] = {
+          address,
+          bizId: uploaded.data.bizId,
+          previewFiles: [storefrontPreview, detailPreview],
+          sourceFiles: [storefrontFile, detailFile],
+          watermarked: true,
+        };
+        readyOrderIds.add(order.id);
+        setWatermarkedUploads({ ...nextWatermarkedUploads });
+        setWatermarkPreparationByOrder((current) => ({
+          ...current,
+          [order.id]: {
+            status: "ready",
+            message: "水印预览已生成",
+            ...(debugEnabled ? { debug: [...debugSteps] } : {}),
+          },
+        }));
+      } catch (error) {
+        appendDebugStep("本工单总耗时", performance.now() - totalStartedAt);
+        delete nextWatermarkedUploads[order.id];
+        setWatermarkedUploads({ ...nextWatermarkedUploads });
+        setWatermarkPreparationByOrder((current) => ({
+          ...current,
+          [order.id]: {
+            status: "error",
+            message: `生成失败：${messageOf(error)}`,
+            ...(debugEnabled ? { debug: [...debugSteps] } : {}),
+          },
+        }));
+      }
+    }
+
+    if (watermarkPreparationSequenceRef.current !== sequence) return;
+    const failedCount = ordersToPrepare.length - readyOrderIds.size;
+    setWatermarkPreparationRunning(false);
+    setWatermarkPreparationMessage(
+      failedCount
+        ? `已生成 ${readyOrderIds.size}/${ordersToPrepare.length} 单，${failedCount} 单需要重新生成`
+        : `已逐单生成 ${readyOrderIds.size} 个工单的水印预览，请确认后提交`,
+    );
+  };
+
   const openBatchConfirmation = async () => {
     if (batchDuplicateChecking) return;
     if (submitMode !== "all-manual") {
@@ -2477,56 +2747,10 @@ export default function App() {
         );
         return;
       }
-      const nextWatermarkedUploads = { ...watermarkedUploads };
-      for (const order of selectedOrders) {
-        const storefrontFile = historyFiles[order.id];
-        const detailFile = detailCloseupFiles[order.id];
-        if (!storefrontFile || !detailFile) {
-          throw new Error(`${order.woNumber || order.id} 缺少两张提交图片`);
-        }
-        const address = registeredWatermarkAddress(order);
-        const existing = nextWatermarkedUploads[order.id];
-        if (
-          existing &&
-          existing.address === address &&
-          existing.sourceFiles[0] === storefrontFile &&
-          existing.sourceFiles[1] === detailFile
-        ) {
-          continue;
-        }
-        setRunMessage(`正在生成 ${order.woNumber} 的带水印图片预览…`);
-        const uploaded = await uploadWorkOrderFiles(
-          [storefrontFile, detailFile],
-          "",
-          { securityWatermark: true, watermarkAddress: address },
-        );
-        let attachments = (uploaded.data.sysAttachList ?? []).filter((file) =>
-          String(file.downloadFilePath ?? "").trim(),
-        );
-        if (attachments.length < 2) {
-          attachments = (await fetchWorkOrderFiles(uploaded.data.bizId)).filter(
-            (file) => String(file.downloadFilePath ?? "").trim(),
-          );
-        }
-        if (attachments.length < 2) {
-          throw new Error(
-            `${order.woNumber || order.id} 上传后未返回两张可预览的带水印附件`,
-          );
-        }
-        const previewFiles = await Promise.all(
-          attachments.slice(0, 2).map((attachment) => downloadWorkOrderFile(attachment)),
-        );
-        nextWatermarkedUploads[order.id] = {
-          address,
-          bizId: uploaded.data.bizId,
-          previewFiles,
-          sourceFiles: [storefrontFile, detailFile],
-        };
-        setWatermarkedUploads({ ...nextWatermarkedUploads });
-      }
       setScreen("confirm");
+      void prepareWatermarkedUploads(selectedOrders);
     } catch (error) {
-      setLoadError(`带水印图片准备失败：${messageOf(error)}`);
+      setLoadError(`图片校验失败：${messageOf(error)}`);
     } finally {
       setBatchDuplicateChecking(false);
     }
@@ -2563,19 +2787,8 @@ export default function App() {
       )
     )
       return;
-    if (
-      selectedOrders.some((order) => {
-        const uploaded = watermarkedUploads[order.id];
-        return (
-          !uploaded ||
-          uploaded.address !== order.address.trim() ||
-          uploaded.sourceFiles[0] !== historyFiles[order.id] ||
-          uploaded.sourceFiles[1] !== detailCloseupFiles[order.id]
-        );
-      })
-    ) {
-      setLoadError("请返回确认页重新生成每个工单的带水印图片预览");
-      setScreen("prepare");
+    if (watermarkPreparationRunning || !watermarkedUploadsReady) {
+      setLoadError("仍有工单的水印预览未就绪，请在确认页完成生成后再提交");
       return;
     }
     setBatchOrderIds(selectedOrders.map((order) => order.id));
@@ -2646,17 +2859,10 @@ export default function App() {
       }
 
       if (submittedCount > 0 && submitIntervalMaxSeconds > 0) {
-        const minSeconds = Math.min(
+        const delaySeconds = randomIntervalSeconds(
           submitIntervalMinSeconds,
           submitIntervalMaxSeconds,
         );
-        const maxSeconds = Math.max(
-          submitIntervalMinSeconds,
-          submitIntervalMaxSeconds,
-        );
-        const delaySeconds =
-          minSeconds +
-          Math.floor(Math.random() * (maxSeconds - minSeconds + 1));
         setRunMessage(`随机等待 ${delaySeconds} 秒后提交下一单…`);
         await wait(delaySeconds * 1000);
       }
@@ -3146,6 +3352,9 @@ export default function App() {
         setScreen("mode");
         return;
       case "confirm":
+        watermarkPreparationSequenceRef.current += 1;
+        setWatermarkPreparationRunning(false);
+        setWatermarkPreparationMessage("已暂停生成；再次进入确认页后继续");
         setScreen("prepare");
         return;
       case "prepare":
@@ -3687,9 +3896,13 @@ export default function App() {
               setSubmitMode(mode);
               setHistoryMode(mode === "historical" ? "auto" : "manual");
               if (mode !== submitMode) {
+                watermarkPreparationSequenceRef.current += 1;
                 setHistoryFiles({});
                 setDetailCloseupFiles({});
                 setWatermarkedUploads({});
+                setWatermarkPreparationByOrder({});
+                setWatermarkPreparationRunning(false);
+                setWatermarkPreparationMessage("等待进入确认页");
                 setStorefrontPrefilledOrderIds([]);
                 setBatchStorefrontMessage("");
                 setSelectedHistoryPhotoIds({});
@@ -3855,6 +4068,7 @@ export default function App() {
             />
           )}
           {screen === "confirm" && (
+            <>
             <ConfirmPage
             orders={selectedOrders}
             submitMode={submitMode}
@@ -3862,18 +4076,37 @@ export default function App() {
             libraryFile={libraryFile}
             detailCloseupFiles={detailCloseupFiles}
             watermarkedUploads={watermarkedUploads}
+            watermarkPreparationByOrder={watermarkPreparationByOrder}
+            watermarkPreparationRunning={watermarkPreparationRunning}
+            watermarkPreparationMessage={watermarkPreparationMessage}
+            watermarksReady={watermarkedUploadsReady}
             reason={reason}
             remark={remark}
             operatorName={operatorName}
             operatorLocked={false}
             date={selectedDate}
             onDateChange={changeSelectedDate}
-            onBack={() => setScreen("prepare")}
+            onBack={() => {
+              watermarkPreparationSequenceRef.current += 1;
+              setWatermarkPreparationRunning(false);
+              setWatermarkPreparationMessage("已暂停生成；再次进入确认页后继续");
+              setScreen("prepare");
+            }}
             onReasonChange={setReason}
             onRemarkChange={setRemark}
             onOperatorNameChange={setCustomOperatorName}
+            onRegenerate={() =>
+              void prepareWatermarkedUploads(selectedOrders)
+            }
             onStart={() => void runBatch()}
             />
+            {appSettings.diagnostics.showWatermarkGenerationDebug && (
+              <WatermarkDebugPanel
+                orders={selectedOrders}
+                watermarkPreparationByOrder={watermarkPreparationByOrder}
+              />
+            )}
+            </>
           )}
           {screen === "running" && (
             <RunningPage

@@ -12,6 +12,9 @@ export type AppSettings = {
     motion: MotionPreference;
     showToolDescriptions: boolean;
   };
+  diagnostics: {
+    showWatermarkGenerationDebug: boolean;
+  };
   vacantRoom: {
     autoSelectOrders: boolean;
     autoSelectImages: boolean;
@@ -26,6 +29,9 @@ export const defaultAppSettings: AppSettings = {
     density: "comfortable",
     motion: "system",
     showToolDescriptions: true,
+  },
+  diagnostics: {
+    showWatermarkGenerationDebug: false,
   },
   vacantRoom: {
     autoSelectOrders: true,
@@ -50,6 +56,7 @@ function objectOrEmpty(value: unknown): Record<string, unknown> {
 export function normalizeAppSettings(value: unknown): AppSettings {
   const candidate = objectOrEmpty(value);
   const display = objectOrEmpty(candidate.display);
+  const diagnostics = objectOrEmpty(candidate.diagnostics);
   const vacantRoom = objectOrEmpty(candidate.vacantRoom);
   const density = display.density === "compact" ? "compact" : "comfortable";
   const motion = display.motion === "reduced" ? "reduced" : "system";
@@ -67,6 +74,12 @@ export function normalizeAppSettings(value: unknown): AppSettings {
       showToolDescriptions: booleanOr(
         display.showToolDescriptions,
         defaultAppSettings.display.showToolDescriptions,
+      ),
+    },
+    diagnostics: {
+      showWatermarkGenerationDebug: booleanOr(
+        diagnostics.showWatermarkGenerationDebug,
+        defaultAppSettings.diagnostics.showWatermarkGenerationDebug,
       ),
     },
     vacantRoom: {

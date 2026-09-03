@@ -3,7 +3,10 @@ import {
   nativeInvoke,
   nativeRequest,
   reportWorkOrderAuthExpired,
+  type NativeUploadFile,
+  type NativeUploadTiming,
 } from "./tauri";
+import { compressImageToTarget } from "./storefrontPhotoCompression";
 import { updateUploadFileNameStatus } from "./uploadFileNameStore";
 
 export type ApiEnvelope<T> = { code: number; msg: string | null; data: T };
@@ -113,6 +116,25 @@ export type UploadedFile = {
   uploadDate?: string | null;
   [key: string]: unknown;
 };
+
+export type WorkOrderUploadTiming = {
+  durationMs: number;
+  label: string;
+};
+
+type NativeUploadDebugTiming = {
+  commandSetupMs: number;
+  httpRequestMs: number;
+  multipartBuildMs: number;
+  nativeTotalMs: number;
+  responseParseMs: number;
+  uploadBytes: number;
+};
+
+function debugFileSize(bytes: number) {
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+}
 
 type DownloadedFile = {
   base64: string;
@@ -351,23 +373,130 @@ export function bindSupplyPointScanAddress(
 export async function uploadWorkOrderFiles(
   files: File[],
   bizId = "",
-  options: { securityWatermark?: boolean; watermarkAddress?: string } = {},
+  options: {
+    debugTiming?: boolean;
+    onTiming?: (timing: WorkOrderUploadTiming) => void;
+    securityWatermark?: boolean;
+    watermarkAddress?: string;
+  } = {},
 ) {
   const requestStartedAt = Date.now();
-  const nativeFiles = await Promise.all(files.map(fileToNativeUpload));
+  const localPreparationStartedAt = performance.now();
+  const compressBeforeUpload = Boolean(options.securityWatermark);
+  let nativeFiles: NativeUploadFile[];
+  try {
+    const preparedFiles = await Promise.all(
+      files.map(async (file, index) => {
+        if (!compressBeforeUpload) {
+          return { originalFile: file, uploadFile: file };
+        }
+        const compressionStartedAt = performance.now();
+        try {
+          const compressedFile = await compressImageToTarget(
+            file,
+            `图片${index + 1}`,
+          );
+          options.onTiming?.({
+            durationMs: Math.round(performance.now() - compressionStartedAt),
+            label: `图片${index + 1}（原始 ${debugFileSize(file.size)} → 上传 ${debugFileSize(compressedFile.size)}）：上传前压缩检查（目标 ≤500 KB）`,
+          });
+          return { originalFile: file, uploadFile: compressedFile };
+        } catch (error) {
+          options.onTiming?.({
+            durationMs: Math.round(performance.now() - compressionStartedAt),
+            label: `图片${index + 1}（原始 ${debugFileSize(file.size)}）：上传前压缩失败`,
+          });
+          throw error;
+        }
+      }),
+    );
+    nativeFiles = await Promise.all(
+      preparedFiles.map(({ originalFile, uploadFile }, index) =>
+        fileToNativeUpload(uploadFile, (timing: NativeUploadTiming) =>
+          options.onTiming?.({
+            durationMs: timing.durationMs,
+            label: `图片${index + 1}（原始 ${debugFileSize(originalFile.size)} → 上传 ${debugFileSize(uploadFile.size)}）：${timing.label}`,
+          }),
+        ),
+      ),
+    );
+    options.onTiming?.({
+      durationMs: Math.round(performance.now() - localPreparationStartedAt),
+      label: "两张图片本地准备合计",
+    });
+  } catch (error) {
+    options.onTiming?.({
+      durationMs: Math.round(performance.now() - localPreparationStartedAt),
+      label: "两张图片本地准备合计（失败）",
+    });
+    throw error;
+  }
   const names = nativeFiles.map((file) => file.name);
   let payload: ApiEnvelope<{ bizId: string; sysAttachList?: UploadedFile[] | null }>;
+  const uploadStartedAt = performance.now();
   try {
-    payload = await nativeInvoke<ApiEnvelope<{ bizId: string; sysAttachList?: UploadedFile[] | null }>>(
+    const nativeResult = await nativeInvoke<
+      ApiEnvelope<{ bizId: string; sysAttachList?: UploadedFile[] | null }> & {
+        __kidindinUploadTiming?: NativeUploadDebugTiming;
+      }
+    >(
       "cis_upload_files",
       {
         addWatermark: Boolean(options.securityWatermark),
         bizId: bizId || null,
+        debugTiming: Boolean(options.debugTiming),
         files: nativeFiles,
         watermarkAddress: options.watermarkAddress?.trim() || null,
       },
     );
+    payload = nativeResult;
+    const bridgeReturnMs = Math.round(performance.now() - uploadStartedAt);
+    options.onTiming?.({
+      durationMs: bridgeReturnMs,
+      label: "Tauri 调用总耗时（含原生处理、HTTP与返回桥接）",
+    });
+    const nativeTiming = nativeResult.__kidindinUploadTiming;
+    if (nativeTiming) {
+      options.onTiming?.({
+        durationMs: nativeTiming.commandSetupMs,
+        label: "Rust 命令初始化与会话准备",
+      });
+      options.onTiming?.({
+        durationMs: nativeTiming.multipartBuildMs,
+        label: `Rust 组装 multipart 请求体（实际图片 ${debugFileSize(nativeTiming.uploadBytes)}）`,
+      });
+      options.onTiming?.({
+        durationMs: nativeTiming.httpRequestMs,
+        label: "HTTP 上传与服务端水印响应（收到响应头）",
+      });
+      options.onTiming?.({
+        durationMs: nativeTiming.responseParseMs,
+        label: "Rust 读取并解析接口响应",
+      });
+      options.onTiming?.({
+        durationMs: Math.max(
+          0,
+          nativeTiming.nativeTotalMs -
+            nativeTiming.commandSetupMs -
+            nativeTiming.multipartBuildMs -
+            nativeTiming.httpRequestMs -
+            nativeTiming.responseParseMs,
+        ),
+        label: "Rust 其它处理与响应封装（估算）",
+      });
+      options.onTiming?.({
+        durationMs: Math.max(
+          0,
+          bridgeReturnMs - nativeTiming.nativeTotalMs,
+        ),
+        label: "Tauri 返回桥接与序列化耗时（估算）",
+      });
+    }
   } catch (error) {
+    options.onTiming?.({
+      durationMs: Math.round(performance.now() - uploadStartedAt),
+      label: "Tauri 调用总耗时（失败）",
+    });
     void updateUploadFileNameStatus(names, "failed", error instanceof Error ? error.message : String(error)).catch(() => undefined);
     throw error;
   }

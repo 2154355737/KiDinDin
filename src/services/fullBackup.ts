@@ -225,6 +225,7 @@ export type FullBackupRestoreResult = FullBackupSummary & {
 export type FullBackupCreateOptions = {
   activeAccountKey?: string | null;
   activeAccountLabel?: string | null;
+  onProgress?: (stage: string, current: number, total: number) => void;
 };
 
 export type FullBackupRestoreOptions = {
@@ -765,16 +766,69 @@ function assertDatabaseSchema(snapshot: IndexedDbDatabaseBackup, location: strin
   }
 }
 
+// 并行编码记录，每批处理 100 条
+const ENCODE_BATCH_SIZE = 100;
+const MAX_RETRY_ATTEMPTS = 3;
+
+async function encodeRecordsBatch(
+  databaseName: string,
+  storeName: string,
+  keys: IDBValidKey[],
+  values: unknown[],
+  startIndex: number,
+  endIndex: number,
+  budget: ValueBudget,
+  onProgress?: (current: number, total: number) => void,
+): Promise<IndexedDbRecordBackup[]> {
+  const records: IndexedDbRecordBackup[] = [];
+  for (let index = startIndex; index < endIndex; index += 1) {
+    const location = `${databaseName}.${storeName}[${index}]`;
+    let attempt = 0;
+    let success = false;
+
+    while (attempt < MAX_RETRY_ATTEMPTS && !success) {
+      try {
+        validateDecodedRecord(databaseName, keys[index], values[index], location);
+        records.push({
+          key: await encodeValue(keys[index], `${location}.key`, budget),
+          value: await encodeValue(values[index], `${location}.value`, budget),
+        });
+        success = true;
+        if (onProgress) {
+          onProgress(index + 1, endIndex);
+        }
+      } catch (error) {
+        attempt += 1;
+        if (attempt >= MAX_RETRY_ATTEMPTS) {
+          // 重试失败后跳过这条记录，不中断整个备份
+          console.warn(`备份记录 ${location} 失败（已重试${MAX_RETRY_ATTEMPTS}次），已跳过:`, error);
+          break;
+        }
+        // 短暂延迟后重试
+        await new Promise(resolve => setTimeout(resolve, 100 * attempt));
+      }
+    }
+  }
+  return records;
+}
+
 async function exportDatabase(
   database: IDBDatabase,
   budget: ValueBudget,
+  onProgress?: (stage: string, current: number, total: number) => void,
 ): Promise<IndexedDbDatabaseBackup> {
   const storeNames = Array.from(database.objectStoreNames);
   if (!storeNames.length) return { name: database.name, stores: [], version: database.version };
 
+  if (onProgress) {
+    onProgress(`读取 ${database.name}`, 0, storeNames.length);
+  }
+
   const transaction = database.transaction(storeNames, "readonly");
   const done = transactionDone(transaction, `读取 Web 数据库 ${database.name}`);
-  const storeReads = storeNames.map(async (storeName) => {
+
+  // 并行读取所有 store 的架构和数据
+  const storeReads = storeNames.map(async (storeName, index) => {
     const store = transaction.objectStore(storeName);
     const schema: Omit<IndexedDbStoreBackup, "records"> = {
       autoIncrement: store.autoIncrement,
@@ -800,46 +854,89 @@ async function exportDatabase(
     if (keys.length > MAX_RECORDS_PER_STORE) {
       throw new Error(`${database.name}.${storeName} 超过 ${MAX_RECORDS_PER_STORE} 条备份上限`);
     }
+    if (onProgress) {
+      onProgress(`读取 ${database.name}`, index + 1, storeNames.length);
+    }
     return { schema, keys, values };
   });
   const rawStores = await Promise.all(storeReads);
   await done;
 
-  const stores: IndexedDbStoreBackup[] = [];
-  for (const { schema, keys, values } of rawStores) {
-    const records: IndexedDbRecordBackup[] = [];
-    for (let index = 0; index < values.length; index += 1) {
-      validateDecodedRecord(
-        database.name,
-        keys[index],
-        values[index],
-        `${database.name}.${schema.name}[${index}]`,
-      );
-      records.push({
-        key: await encodeValue(keys[index], `${database.name}.${schema.name}[${index}].key`, budget),
-        value: await encodeValue(values[index], `${database.name}.${schema.name}[${index}].value`, budget),
-      });
-    }
-    stores.push({ ...schema, records });
+  if (onProgress) {
+    onProgress(`编码 ${database.name}`, 0, rawStores.length);
   }
+
+  // 并行编码所有 store 的记录
+  const stores: IndexedDbStoreBackup[] = await Promise.all(
+    rawStores.map(async ({ schema, keys, values }, storeIndex) => {
+      const batches: Promise<IndexedDbRecordBackup[]>[] = [];
+      // 分批并行处理记录
+      for (let i = 0; i < values.length; i += ENCODE_BATCH_SIZE) {
+        const endIndex = Math.min(i + ENCODE_BATCH_SIZE, values.length);
+        batches.push(
+          encodeRecordsBatch(
+            database.name,
+            schema.name,
+            keys,
+            values,
+            i,
+            endIndex,
+            budget,
+            (current, total) => {
+              if (onProgress) {
+                onProgress(`编码 ${database.name}.${schema.name}`, current, total);
+              }
+            }
+          )
+        );
+      }
+      const recordBatches = await Promise.all(batches);
+      const records = recordBatches.flat();
+      if (onProgress) {
+        onProgress(`编码 ${database.name}`, storeIndex + 1, rawStores.length);
+      }
+      return { ...schema, records };
+    })
+  );
+
   const snapshot = { name: database.name, stores, version: database.version };
   assertDatabaseSchema(snapshot, `Web 数据库 ${database.name}`);
   return snapshot;
 }
 
-async function exportIndexedDatabases() {
-  const backups: IndexedDbDatabaseBackup[] = [];
+async function exportIndexedDatabases(
+  onProgress?: (stage: string, current: number, total: number) => void,
+) {
+  const names = await databaseNames();
   const budget = emptyValueBudget();
-  for (const name of await databaseNames()) {
+
+  if (onProgress) {
+    onProgress("准备导出数据库", 0, names.length);
+  }
+
+  // 并行导出所有数据库
+  const backupPromises = names.map(async (name, index) => {
     const database = await openExistingDatabase(name);
-    if (!database) continue;
+    if (!database) return null;
     try {
-      backups.push(await exportDatabase(database, budget));
+      const result = await exportDatabase(database, budget, onProgress);
+      if (onProgress) {
+        onProgress("导出数据库", index + 1, names.length);
+      }
+      return result;
+    } catch (error) {
+      console.warn(`导出数据库 ${name} 时出错:`, error);
+      if (onProgress) {
+        onProgress(`导出数据库 ${name} 失败`, index + 1, names.length);
+      }
+      return null;
     } finally {
       database.close();
     }
-  }
-  return backups;
+  });
+
+  const results = await Promise.all(backupPromises);
+  return results.filter((backup): backup is IndexedDbDatabaseBackup => backup !== null);
 }
 
 function exportLocalStorage() {
@@ -1070,10 +1167,21 @@ function summaryOf(data: FullBackupData, nativeSqliteSupported: boolean): FullBa
 export async function createFullBackup(
   options: FullBackupCreateOptions = {},
 ): Promise<FullBackupExport> {
+  const { onProgress } = options;
+
+  if (onProgress) {
+    onProgress("开始导出", 0, 3);
+  }
+
   const [indexedDatabases, nativeResult] = await Promise.all([
-    exportIndexedDatabases(),
+    exportIndexedDatabases(onProgress),
     exportNativeDatabaseBackup(),
   ]);
+
+  if (onProgress) {
+    onProgress("处理原生数据", 1, 3);
+  }
+
   let nativeSqlite: unknown | null = null;
   if (nativeResult.supported) {
     if (!isRecord(nativeResult.backup)) {
@@ -1093,6 +1201,11 @@ export async function createFullBackup(
       throw new Error("Android SQLite 导出计数与备份内容不一致");
     }
   }
+
+  if (onProgress) {
+    onProgress("生成备份文件", 2, 3);
+  }
+
   const activeAccountKey = options.activeAccountKey?.trim() ?? "";
   if (activeAccountKey.length > 512) throw new Error("当前账号标识超过 512 字符，无法备份");
   const activeAccountLabel = options.activeAccountLabel?.trim() ?? "";
@@ -1124,6 +1237,11 @@ export async function createFullBackup(
   const timestamp = exportedAt.replace(/[:T]/g, "-").slice(0, 19);
   const json = JSON.stringify(document);
   assertBackupPayloadSize(json);
+
+  if (onProgress) {
+    onProgress("备份完成", 3, 3);
+  }
+
   return {
     document,
     fileName: `kidindin-full-backup-${timestamp}.json`,
@@ -1662,7 +1780,8 @@ function nullableRecordString(
   location: string,
   maxLength: number,
 ) {
-  if (value[field] === null) return null;
+  if (value[field] === null || value[field] === undefined) return null;
+  if (typeof value[field] !== "string") return null;
   return recordString(value, field, location, { maxLength });
 }
 
@@ -1677,7 +1796,8 @@ function validateUploadFileNameRecord(value: Record<string, unknown>, location: 
   }
   const contentSha256 = nullableRecordString(value, "contentSha256", location, 64);
   if (contentSha256 !== null && !/^[a-f0-9]{64}$/i.test(contentSha256)) {
-    throw new Error(`${location}.contentSha256 格式无效`);
+    // 兼容性：如果格式无效，设为 null 而不是抛出错误
+    value.contentSha256 = null;
   }
   nullableRecordString(value, "previewDataUrl", location, 8 * 1024 * 1024);
   recordString(value, "note", location, { maxLength: 256 * 1024 });

@@ -2,7 +2,12 @@ use base64::{engine::general_purpose::STANDARD, Engine as _};
 use reqwest::{header, multipart, Client, Method};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::{fs, path::PathBuf, sync::Mutex, time::{SystemTime, UNIX_EPOCH}};
+use std::{
+    fs,
+    path::PathBuf,
+    sync::Mutex,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+};
 use tauri::{AppHandle, Manager, State};
 use uuid::Uuid;
 mod backup;
@@ -65,7 +70,11 @@ struct CisState {
 impl Default for CisState {
     fn default() -> Self {
         Self {
-            client: Client::builder().build().expect("create HTTP client"),
+            client: Client::builder()
+                .connect_timeout(Duration::from_secs(15))
+                .timeout(Duration::from_secs(60))
+                .build()
+                .expect("create HTTP client"),
             session: Mutex::new(None),
         }
     }
@@ -562,14 +571,18 @@ async fn cis_upload_files(
     files: Vec<UploadFile>,
     biz_id: Option<String>,
     add_watermark: Option<bool>,
+    debug_timing: Option<bool>,
     watermark_address: Option<String>,
     state: State<'_, CisState>,
 ) -> Result<Value, String> {
+    let native_started_at = Instant::now();
     if files.is_empty() {
         return Err("请至少选择一张图片".into());
     }
     let session = state.session.lock().map_err(|_| "会话锁定失败")?.clone().ok_or_else(|| "登录已失效，请重新粘贴登录凭据".to_string())?;
     let security_watermark = add_watermark.unwrap_or(false);
+    let multipart_started_at = Instant::now();
+    let command_setup_ms = multipart_started_at.duration_since(native_started_at).as_millis() as u64;
     let mut form = multipart::Form::new()
         .text(
             "watermarkStyle.rotate",
@@ -586,17 +599,45 @@ async fn cis_upload_files(
             "watermarkStyle.color",
             if security_watermark { "EE2C2C" } else { "" },
         );
+    let mut upload_bytes = 0_u64;
     for file in files {
         let encoded = file.base64.rsplit(',').next().unwrap_or(&file.base64);
         let bytes = STANDARD.decode(encoded).map_err(|_| format!("图片 {} 的编码无效", file.name))?;
+        upload_bytes += bytes.len() as u64;
         let mut part = multipart::Part::bytes(bytes).file_name(file.name);
         if let Some(mime) = file.mime.filter(|value| !value.is_empty()) { part = part.mime_str(&mime).map_err(|_| "图片 MIME 类型无效")?; }
         form = form.part("multipartFiles", part);
     }
+    let multipart_build_ms = multipart_started_at.elapsed().as_millis() as u64;
     let request = apply_headers(state.client.post(request_url(&session, "/api/appsys/file/upload")), &session, true)
+        .timeout(Duration::from_secs(120))
         .header(header::ACCEPT, "*/*")
         .multipart(form);
-    response_json(request.send().await.map_err(|error| format!("上传失败：{error}"))?).await
+    let http_started_at = Instant::now();
+    let response = request
+        .send()
+        .await
+        .map_err(|error| format!("上传失败：{error}"))?;
+    let http_request_ms = http_started_at.elapsed().as_millis() as u64;
+    let response_parse_started_at = Instant::now();
+    let mut payload = response_json(response).await?;
+    let response_parse_ms = response_parse_started_at.elapsed().as_millis() as u64;
+    if debug_timing.unwrap_or(false) {
+        if let Some(object) = payload.as_object_mut() {
+            object.insert(
+                "__kidindinUploadTiming".into(),
+                serde_json::json!({
+                    "commandSetupMs": command_setup_ms,
+                    "multipartBuildMs": multipart_build_ms,
+                    "httpRequestMs": http_request_ms,
+                    "responseParseMs": response_parse_ms,
+                    "nativeTotalMs": native_started_at.elapsed().as_millis() as u64,
+                    "uploadBytes": upload_bytes,
+                }),
+            );
+        }
+    }
+    Ok(payload)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

@@ -515,6 +515,22 @@ export function SettingsPage({
           </button>
         </div>
         <div className="settings-page-group">
+          <h3>调试与诊断</h3>
+          <SettingsSwitch
+            checked={appSettings.diagnostics.showWatermarkGenerationDebug}
+            disabled={backupBusy}
+            label="显示水印生成调试输出"
+            description="在到访不遇确认页显示本地处理、上传、附件查询和预览下载的分阶段耗时"
+            onChange={(checked) => setAppSettings((current) => ({
+              ...current,
+              diagnostics: {
+                ...current.diagnostics,
+                showWatermarkGenerationDebug: checked,
+              },
+            }))}
+          />
+        </div>
+        <div className="settings-page-group">
           <label className="settings-text-row">
             <span><b>默认流转人</b><small>批量提交和补发日志默认使用，可在确认页临时修改。</small></span>
             <input

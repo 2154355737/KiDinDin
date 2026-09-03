@@ -70,6 +70,11 @@ export type NativeUploadFile = {
   base64: string;
 };
 
+export type NativeUploadTiming = {
+  durationMs: number;
+  label: string;
+};
+
 export type NativeDatabaseBackupResult = {
   backup?: unknown;
   databaseName?: string;
@@ -249,22 +254,49 @@ async function normalizeJpeg(file: File) {
   });
 }
 
-export async function fileToNativeUpload(file: File): Promise<NativeUploadFile> {
-  const jpeg = await normalizeJpeg(file);
-  const randomized = await randomizeJpegSha256(jpeg, file);
-  const previewDataUrl = await createPreviewDataUrl(randomized.blob, file.name);
-  const name = await reserveUniqueUploadFileName(
-    file,
-    previewDataUrl,
-    new Date(),
-    randomized.contentSha256,
+export async function fileToNativeUpload(
+  file: File,
+  onTiming?: (timing: NativeUploadTiming) => void,
+): Promise<NativeUploadFile> {
+  const measure = async <T,>(
+    label: string,
+    operation: () => Promise<T>,
+  ) => {
+    const startedAt = performance.now();
+    try {
+      return await operation();
+    } finally {
+      onTiming?.({
+        durationMs: Math.round(performance.now() - startedAt),
+        label,
+      });
+    }
+  };
+  const jpeg = await measure("格式检查与 JPEG 归一化", () => normalizeJpeg(file));
+  const randomized = await measure("随机信息与 SHA-256", () =>
+    randomizeJpegSha256(jpeg, file),
   );
-  const base64 = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error("读取图片失败"));
-    reader.onload = () => resolve(String(reader.result ?? ""));
-    reader.readAsDataURL(randomized.blob);
-  });
+  const previewDataUrl = await measure("生成本地缩略图预览", () =>
+    createPreviewDataUrl(randomized.blob, file.name),
+  );
+  const name = await measure("IndexedDB 生成唯一文件名", () =>
+    reserveUniqueUploadFileName(
+      file,
+      previewDataUrl,
+      new Date(),
+      randomized.contentSha256,
+    ),
+  );
+  const base64 = await measure(
+    "FileReader 转 Base64",
+    () =>
+      new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error("读取图片失败"));
+        reader.onload = () => resolve(String(reader.result ?? ""));
+        reader.readAsDataURL(randomized.blob);
+      }),
+  );
 
   return { base64, mime: "image/jpeg", name };
 }
