@@ -61,6 +61,8 @@ import {
 import {
   deleteStorefrontPhotoPrefill,
   getStorefrontPhotoPrefill,
+  getSavedStorefrontPhotoPrefill,
+  getStorefrontPhotoDraft,
   saveStorefrontPhotoPrefill,
   storefrontPhotoPrefillToFile,
   type StorefrontPhotoPrefill,
@@ -397,6 +399,9 @@ export function AppDrawer({
     "idle" | "loading" | "saving" | "success" | "error"
   >("idle");
   const [storefrontRemoveConfirm, setStorefrontRemoveConfirm] = useState(false);
+  const storefrontOperation = useRef<symbol | null>(null);
+  const storefrontContext = useRef("");
+  storefrontContext.current = JSON.stringify([localAccountKey, order?.woHeaderId]);
   const [oneStandardOpen, setOneStandardOpen] = useState(false);
   const [oneStandardQrValue, setOneStandardQrValue] = useState("");
   const [oneStandardAddress, setOneStandardAddress] = useState("");
@@ -478,6 +483,9 @@ export function AppDrawer({
 
   useEffect(() => {
     let active = true;
+    storefrontOperation.current = null;
+    setStorefrontPrefillOpen(false);
+    setStorefrontPrefillDraft(null);
     setStorefrontPrefill(null);
     setStorefrontPrefillFile(null);
     setStorefrontPrefillMessage("");
@@ -499,15 +507,27 @@ export function AppDrawer({
         );
         setStorefrontPrefillStatus(prefill ? "success" : "idle");
       })
-      .catch((error) => {
+      .catch(async (error) => {
+        if (!active) return;
+        try {
+          const [saved, draft] = await Promise.all([
+            getSavedStorefrontPhotoPrefill(localAccountKey, order.woHeaderId),
+            getStorefrontPhotoDraft(localAccountKey, order.woHeaderId),
+          ]);
+          if (!active) return;
+          setStorefrontPrefill(saved);
+          setStorefrontPrefillFile(saved ? storefrontPhotoPrefillToFile(saved) : null);
+          setStorefrontPrefillDraft(draft ?? (saved ? storefrontPhotoPrefillToFile(saved) : null));
+        } catch { /* Surface the read/recovery failure rather than claiming no photo. */ }
         if (!active) return;
         setStorefrontPrefillMessage(
-          error instanceof Error ? error.message : "读取门头预填照片失败",
+          `照片读取或恢复未完成，请打开预填重试；不要据此判断照片不存在：${error instanceof Error ? error.message : "读取失败"}`,
         );
         setStorefrontPrefillStatus("error");
       });
     return () => {
       active = false;
+      storefrontOperation.current = null;
     };
   }, [localAccountKey, order?.woHeaderId]);
 
@@ -518,13 +538,13 @@ export function AppDrawer({
     )
       return;
     setStorefrontPrefillOpen(false);
-    setStorefrontPrefillDraft(storefrontPrefillFile);
+    // Keep a failed replacement available for retry in this session.
     setStorefrontRemoveConfirm(false);
   };
 
   const openStorefrontPrefill = () => {
     if (!canStorefrontPrefill) return;
-    setStorefrontPrefillDraft(storefrontPrefillFile);
+    setStorefrontPrefillDraft((draft) => draft ?? storefrontPrefillFile);
     setStorefrontRemoveConfirm(false);
     setStorefrontPrefillOpen(true);
   };
@@ -533,42 +553,57 @@ export function AppDrawer({
     selectedFile: File | null = storefrontPrefillDraft,
   ) => {
     if (!order || !localAccountKey || !selectedFile) return;
+    if (storefrontOperation.current) throw new Error("照片正在保存，请等待完成");
+    const operation = Symbol();
+    const context = storefrontContext.current;
+    storefrontOperation.current = operation;
+    const isCurrent = () => storefrontOperation.current === operation && storefrontContext.current === context;
     setStorefrontPrefillStatus("saving");
-    setStorefrontPrefillMessage("正在按 500 KB 上限优化并保存门头照片到 App…");
+    setStorefrontPrefillMessage("正在保存恢复草稿、压缩并校验照片，请等待保存完成…");
     try {
       const prefill = await saveStorefrontPhotoPrefill(
         localAccountKey,
         order,
         selectedFile,
       );
+      if (!isCurrent()) return;
       const file = storefrontPhotoPrefillToFile(prefill);
       setStorefrontPrefill(prefill);
       setStorefrontPrefillFile(file);
       setStorefrontPrefillDraft(file);
       setStorefrontPrefillStatus("success");
       setStorefrontPrefillMessage(
-        `已按 500 KB 上限优化并持久保存到 App（${Math.ceil(prefill.size / 1024)} KB）；重启后仍会保留，进入批量提交时会自动带入`,
+        `照片已保存并通过回读校验（${Math.ceil(prefill.size / 1024)} KB）；进入批量提交时会自动带入`,
       );
       onStorefrontPrefillChange(order.woHeaderId, true);
       setStorefrontPrefillOpen(false);
     } catch (error) {
+      if (!isCurrent()) return;
       setStorefrontPrefillStatus("error");
       setStorefrontPrefillMessage(
         error instanceof Error ? error.message : "保存门头预填照片失败",
       );
+      throw error;
+    } finally {
+      if (storefrontOperation.current === operation) storefrontOperation.current = null;
     }
   };
 
   const removeStorefrontPrefill = async () => {
-    if (!order || !localAccountKey || !storefrontPrefill) return;
+    if (!order || !localAccountKey || !storefrontPrefill || storefrontOperation.current) return;
     if (!storefrontRemoveConfirm) {
       setStorefrontRemoveConfirm(true);
       return;
     }
+    const operation = Symbol();
+    const context = storefrontContext.current;
+    storefrontOperation.current = operation;
+    const isCurrent = () => storefrontOperation.current === operation && storefrontContext.current === context;
     setStorefrontPrefillStatus("saving");
     setStorefrontPrefillMessage("正在删除本地门头预填…");
     try {
       await deleteStorefrontPhotoPrefill(localAccountKey, order.woHeaderId);
+      if (!isCurrent()) return;
       setStorefrontPrefill(null);
       setStorefrontPrefillFile(null);
       setStorefrontPrefillDraft(null);
@@ -578,24 +613,28 @@ export function AppDrawer({
       onStorefrontPrefillChange(order.woHeaderId, false);
       setStorefrontPrefillOpen(false);
     } catch (error) {
+      if (!isCurrent()) return;
       setStorefrontPrefillStatus("error");
       setStorefrontPrefillMessage(
         error instanceof Error ? error.message : "删除门头预填照片失败",
       );
+    } finally {
+      if (storefrontOperation.current === operation) storefrontOperation.current = null;
     }
   };
 
   useEffect(() => {
     if (!storefrontPrefillOpen) return;
     const closeOnAndroidBack = (event: Event) => {
+      if (event.defaultPrevented) return;
+      event.preventDefault();
       if (
+        storefrontOperation.current ||
         storefrontPrefillStatus === "loading" ||
         storefrontPrefillStatus === "saving"
       )
         return;
-      event.preventDefault();
       setStorefrontPrefillOpen(false);
-      setStorefrontPrefillDraft(storefrontPrefillFile);
       setStorefrontRemoveConfirm(false);
     };
     window.addEventListener("kidindin:back", closeOnAndroidBack);
@@ -1725,20 +1764,22 @@ export function AppDrawer({
               >
                 <h3>到访不遇门头预填</h3>
                 <p>
-                  为当前工单“{order.woNumber || order.woHeaderId}”提前保存门头照片。照片按当前账号和工单绑定，只保存在本机 App；关闭或重启后仍会保留，进入批量提交时自动带入。
+                  为当前工单“{order.woNumber || order.woHeaderId}”提前保存门头照片。确认图片后请等待“已保存并通过回读校验”；处理意外中断时，重新打开此工单会尝试恢复本机草稿。
                 </p>
                 <div className="storefront-prefill-photo-field">
                   <span>当前工单门头照片</span>
                   <UploadFilePicker
                     file={storefrontPrefillDraft}
-                    inputKey={`${order.woHeaderId}-storefront-prefill`}
+                    inputKey={`${localAccountKey}-${order.woHeaderId}-storefront-prefill`}
                     label="到访不遇门头照片"
                     placeholder="从相册选择门头照片"
                     cameraCapture={mobileRuntime}
-                    onPick={(file) => {
+                    disabled={storefrontPrefillStatus === "saving" || storefrontPrefillStatus === "loading"}
+                    confirmingLabel="正在保存并校验…"
+                    onPick={async (file) => {
                       setStorefrontPrefillDraft(file);
                       setStorefrontRemoveConfirm(false);
-                      if (file) void persistStorefrontPrefill(file);
+                      if (file) await persistStorefrontPrefill(file);
                     }}
                   />
                 </div>
@@ -1782,7 +1823,7 @@ export function AppDrawer({
                       !storefrontPrefillDraft ||
                       storefrontPrefillStatus === "saving"
                     }
-                    onClick={() => void persistStorefrontPrefill()}
+                    onClick={() => void persistStorefrontPrefill().catch(() => undefined)}
                   >
                     {storefrontPrefillStatus === "saving"
                       ? "正在保存…"

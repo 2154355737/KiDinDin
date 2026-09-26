@@ -1,3 +1,5 @@
+import { encodeStorefrontPhoto } from "./storefrontCompressionStrategy";
+
 const TARGET_BYTES = 500 * 1024;
 const MIN_QUALITY = 0.5;
 const MAX_DIMENSION = 2560;
@@ -13,11 +15,20 @@ function loadImage(file: File, imageLabel = "门头照片") {
   return new Promise<HTMLImageElement>((resolve, reject) => {
     const image = new Image();
     const url = URL.createObjectURL(file);
+    const timeout = setTimeout(() => {
+      image.onload = null;
+      image.onerror = null;
+      image.src = "";
+      URL.revokeObjectURL(url);
+      reject(new Error(`${imageLabel}读取超时，请重试`));
+    }, 15_000);
     image.onload = () => {
+      clearTimeout(timeout);
       URL.revokeObjectURL(url);
       resolve(image);
     };
     image.onerror = () => {
+      clearTimeout(timeout);
       URL.revokeObjectURL(url);
       reject(new Error(`${imageLabel}无法读取，请重新拍照或选择图片`));
     };
@@ -87,6 +98,90 @@ export async function compressImageToTarget(file: File, imageLabel = "图片") {
   );
 }
 
+function compressInWorker(file: File): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(
+      new URL("./storefrontPhotoCompression.worker.ts", import.meta.url),
+      { type: "module" },
+    );
+    const cleanup = () => {
+      clearTimeout(timeout);
+      worker.terminate();
+    };
+    const fail = () => {
+      cleanup();
+      reject(new Error("后台图片压缩不可用"));
+    };
+    const timeout = setTimeout(fail, 15_000);
+    worker.onerror = (event) => {
+      event.preventDefault();
+      fail();
+    };
+    worker.onmessageerror = fail;
+    worker.onmessage = (event: MessageEvent<{ blob?: Blob; error?: string }>) => {
+      const blob = event.data?.blob;
+      if (!(blob instanceof Blob) || blob.type !== "image/jpeg" ||
+          blob.size === 0) {
+        fail();
+        return;
+      }
+      cleanup();
+      resolve(blob);
+    };
+    try {
+      worker.postMessage(file);
+    } catch {
+      fail();
+    }
+  });
+}
+
+async function compressStorefrontOnMainThread(file: File) {
+  const image = await loadImage(file);
+  const canvas = document.createElement("canvas");
+  try {
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("当前设备不支持图片压缩");
+    let drawn = false;
+    return await encodeStorefrontPhoto(image.naturalWidth, image.naturalHeight,
+      async (width, height, quality) => {
+        // Give the page a chance to respond between fallback encoding attempts.
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        if (!drawn) {
+          canvas.width = width;
+          canvas.height = height;
+          context.drawImage(image, 0, 0);
+          drawn = true;
+        }
+        return canvasBlob(canvas, quality);
+      });
+  } finally {
+    canvas.width = 1;
+    canvas.height = 1;
+    image.src = "";
+  }
+}
+
 export async function compressStorefrontPhoto(file: File) {
-  return compressImageToTarget(file, "门头照片");
+  if (file.size <= TARGET_BYTES && file.type.toLowerCase() === "image/jpeg") {
+    // A MIME label and JPEG header alone do not prove a camera file is decodable.
+    const image = await loadImage(file);
+    image.src = "";
+    return file;
+  }
+  let blob: Blob | undefined;
+  if (typeof Worker !== "undefined" && typeof OffscreenCanvas !== "undefined" &&
+      typeof createImageBitmap === "function" &&
+      typeof OffscreenCanvas.prototype.convertToBlob === "function") {
+    try {
+      blob = await compressInWorker(file);
+    } catch {
+      // Older WebViews may expose APIs but fail to decode or start a worker.
+    }
+  }
+  blob ??= await compressStorefrontOnMainThread(file);
+  return new File([blob], `${fileBaseName(file.name)}.jpg`, {
+    lastModified: file.lastModified,
+    type: "image/jpeg",
+  });
 }

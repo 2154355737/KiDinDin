@@ -20,6 +20,9 @@ function useFilePreviewUrl(file: File | null | undefined) {
 
 async function snapshotSelectedFile(file: File) {
   const contents = await file.arrayBuffer();
+  if (!contents.byteLength || contents.byteLength !== file.size) {
+    throw new Error("图片文件读取不完整");
+  }
   return new File([contents], file.name, {
     type: file.type,
     lastModified: file.lastModified,
@@ -32,6 +35,7 @@ function ImagePreviewDialog({
   url,
   actionError,
   confirming = false,
+  confirmingLabel = "正在检查重复…",
   onClose,
   onConfirm,
 }: {
@@ -40,6 +44,7 @@ function ImagePreviewDialog({
   url: string;
   actionError?: string;
   confirming?: boolean;
+  confirmingLabel?: string;
   onClose: () => void;
   onConfirm?: () => void;
 }) {
@@ -98,7 +103,7 @@ function ImagePreviewDialog({
               取消
             </button>
             <button type="button" disabled={confirming} onClick={onConfirm}>
-              {confirming ? "正在检查重复…" : "选择这张图片"}
+              {confirming ? confirmingLabel : "选择这张图片"}
             </button>
           </footer>
         ) : null}
@@ -114,6 +119,8 @@ export function UploadFilePicker({
   label,
   placeholder,
   cameraCapture = false,
+  disabled = false,
+  confirmingLabel,
   onPick,
 }: {
   file: File | null | undefined;
@@ -121,6 +128,8 @@ export function UploadFilePicker({
   label: string;
   placeholder: string;
   cameraCapture?: boolean;
+  disabled?: boolean;
+  confirmingLabel?: string;
   onPick: (file: File | null) => void | Promise<void>;
 }) {
   const url = useFilePreviewUrl(file);
@@ -134,11 +143,21 @@ export function UploadFilePicker({
   const [selectionError, setSelectionError] = useState("");
   const [confirming, setConfirming] = useState(false);
   const selectionVersionRef = useRef(0);
+  const confirmingRef = useRef(false);
+  useEffect(() => {
+    setPendingFile(null);
+    setSelectionError("");
+    setPendingError("");
+    setConfirming(false);
+    confirmingRef.current = false;
+    return () => { selectionVersionRef.current += 1; };
+  }, [inputKey]);
 
   const stageSelectedFile = async (
     input: HTMLInputElement,
     source: "camera" | "library",
   ) => {
+    if (disabled || confirmingRef.current) return;
     const nextFile = input.files?.[0] ?? null;
     if (!nextFile) {
       input.value = "";
@@ -171,18 +190,25 @@ export function UploadFilePicker({
   };
 
   const confirmPendingFile = async () => {
-    if (!pendingFile || confirming) return;
+    if (!pendingFile || confirmingRef.current || disabled) return;
+    confirmingRef.current = true;
+    const version = selectionVersionRef.current;
     setConfirming(true);
     setPendingError("");
     try {
       await onPick(pendingFile);
+      if (version !== selectionVersionRef.current) return;
       setPendingFile(null);
     } catch (error) {
+      if (version !== selectionVersionRef.current) return;
       setPendingError(
         error instanceof Error ? error.message : "检查图片是否重复失败",
       );
     } finally {
-      setConfirming(false);
+      if (version === selectionVersionRef.current) {
+        confirmingRef.current = false;
+        setConfirming(false);
+      }
     }
   };
 
@@ -203,6 +229,7 @@ export function UploadFilePicker({
           <input
             key={`${inputKey}-camera`}
             type="file"
+            disabled={disabled || confirming}
             accept="image/*"
             capture="environment"
             aria-label={`使用安卓原生相机拍摄${label}`}
@@ -217,6 +244,7 @@ export function UploadFilePicker({
         <input
           key={inputKey}
           type="file"
+          disabled={disabled || confirming}
           accept="image/*"
           onChange={(event) =>
             stageSelectedFile(event.currentTarget, "library")
@@ -255,6 +283,7 @@ export function UploadFilePicker({
           url={pendingUrl}
           actionError={pendingError}
           confirming={confirming}
+          confirmingLabel={confirmingLabel}
           onClose={closePendingPreview}
           onConfirm={() => void confirmPendingFile()}
         />

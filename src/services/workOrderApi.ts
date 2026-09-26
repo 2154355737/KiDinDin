@@ -377,12 +377,13 @@ export async function uploadWorkOrderFiles(
     debugTiming?: boolean;
     onTiming?: (timing: WorkOrderUploadTiming) => void;
     securityWatermark?: boolean;
+    compressBeforeUpload?: boolean;
     watermarkAddress?: string;
   } = {},
 ) {
   const requestStartedAt = Date.now();
   const localPreparationStartedAt = performance.now();
-  const compressBeforeUpload = Boolean(options.securityWatermark);
+  const compressBeforeUpload = options.compressBeforeUpload ?? Boolean(options.securityWatermark);
   let nativeFiles: NativeUploadFile[];
   try {
     const preparedFiles = await Promise.all(
@@ -446,7 +447,7 @@ export async function uploadWorkOrderFiles(
         bizId: bizId || null,
         debugTiming: Boolean(options.debugTiming),
         files: nativeFiles,
-        watermarkAddress: options.watermarkAddress?.trim() || null,
+        watermarkAddress: options.securityWatermark ? options.watermarkAddress?.trim() || null : null,
       },
     );
     payload = nativeResult;
@@ -467,7 +468,9 @@ export async function uploadWorkOrderFiles(
       });
       options.onTiming?.({
         durationMs: nativeTiming.httpRequestMs,
-        label: "HTTP 上传与服务端水印响应（收到响应头）",
+        label: options.securityWatermark
+          ? "HTTP 上传与服务端水印响应（收到响应头）"
+          : "HTTP 普通上传响应（收到响应头，不加水印）",
       });
       options.onTiming?.({
         durationMs: nativeTiming.responseParseMs,

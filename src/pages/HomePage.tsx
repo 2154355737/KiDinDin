@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { WorkOrder } from "../types/workOrder";
 import type { LocalWorkOrderMeta } from "../services/localWorkOrderStore";
+import { isVacantRoom } from "../services/vacantRoomTarget";
 import { DatePicker } from "../components/DatePicker";
 import { Icon } from "../components/Icon";
 import { WorkOrderList } from "../components/WorkOrderList";
@@ -154,9 +155,7 @@ export function HomePage({
   const ended = overviewOrders.filter(
     (order) => order.status === "已结束",
   ).length;
-  const vacantCount = overviewOrders.filter((order) =>
-    order.resident.includes("需首检"),
-  ).length;
+  const vacantCount = overviewOrders.filter(isVacantRoom).length;
   const residentCount = Math.max(overviewOrders.length - vacantCount, 0);
   const dailyTemplate =
     DAILY_BRIEFING_TEMPLATES[dailyTemplateIndex(briefingDay)];

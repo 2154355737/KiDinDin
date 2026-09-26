@@ -6,6 +6,7 @@ import {
   saveVacantRoomFill,
   type VacantRoomFillPreview,
 } from "../services/vacantRoomFillApi";
+import { isVacantRoomTarget } from "../services/vacantRoomTarget";
 import type { WorkOrder } from "../types/workOrder";
 
 type FillStatus =
@@ -59,14 +60,7 @@ export function VacantRoomFillPage({
   onDateChange,
   orders,
 }: VacantRoomFillPageProps) {
-  const vacantOrders = useMemo(
-    () =>
-      orders.filter(
-        (order) =>
-          order.backendStatusCode === "20" && order.resident.includes("需首检"),
-      ),
-    [orders],
-  );
+  const vacantOrders = useMemo(() => orders.filter(isVacantRoomTarget), [orders]);
   const vacantOrderKey = vacantOrders.map((order) => order.id).join("|");
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
   const [states, setStates] = useState<Record<string, FillState>>({});
@@ -281,7 +275,7 @@ export function VacantRoomFillPage({
         <section className="vacant-room-empty">
           <Icon name="note" size={24} />
           <b>当天没有可预填的空房工单</b>
-          <span>仅识别待处理且住户字段包含“需首检”的工单。</span>
+          <span>仅识别待处理且住户标记为“需首检”或工单名称为“需持安检单开户”的工单。</span>
         </section>
       ) : (
         <section className="vacant-room-list">

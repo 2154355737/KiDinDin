@@ -9,6 +9,7 @@ import {
   WORK_ORDER_ACT_LINES_WITHOUT_HEADER_ID,
   type VacantRoomFillTemplateLine,
 } from "./vacantRoomFillTemplate";
+import { isVacantRoomTarget } from "./vacantRoomTarget";
 import type { WorkOrder } from "../types/workOrder";
 
 const PROTECTED_DYNAMIC_CODES = new Set([
@@ -67,11 +68,8 @@ function clone<T>(value: T): T {
 }
 
 function assertVacantPendingOrder(order: WorkOrder) {
-  if (
-    order.backendStatusCode !== "20" ||
-    !order.resident.includes("需首检")
-  ) {
-    throw new Error("仅允许预存待处理的需首检工单");
+  if (!isVacantRoomTarget(order)) {
+    throw new Error("仅允许预存待处理的空房工单");
   }
 }
 

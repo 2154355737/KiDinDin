@@ -12,8 +12,10 @@ use tauri::{AppHandle, Manager, State};
 use uuid::Uuid;
 mod backup;
 mod vacant_room;
+mod notice_code;
 mod img_augment;
 mod floating_overlay;
+mod upload_policy;
 #[cfg(mobile)]
 use tauri_plugin_biometric::{AuthOptions, BiometricExt};
 
@@ -583,22 +585,10 @@ async fn cis_upload_files(
     let security_watermark = add_watermark.unwrap_or(false);
     let multipart_started_at = Instant::now();
     let command_setup_ms = multipart_started_at.duration_since(native_started_at).as_millis() as u64;
-    let mut form = multipart::Form::new()
-        .text(
-            "watermarkStyle.rotate",
-            if security_watermark { "0" } else { "" },
-        )
-        .text("bizId", biz_id.unwrap_or_default())
-        .text("isIphone", "false")
-        .text("address", watermark_address.unwrap_or_default())
-        .text(
-            "addWatermark",
-            if security_watermark { "true" } else { "false" },
-        )
-        .text(
-            "watermarkStyle.color",
-            if security_watermark { "EE2C2C" } else { "" },
-        );
+    let mut form = multipart::Form::new();
+    for (name, value) in upload_policy::metadata_fields(biz_id, security_watermark, watermark_address) {
+        form = form.text(name, value);
+    }
     let mut upload_bytes = 0_u64;
     for file in files {
         let encoded = file.base64.rsplit(',').next().unwrap_or(&file.base64);
@@ -646,7 +636,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(backup::init())
         .plugin(floating_overlay::init())
-        .plugin(vacant_room::init());
+        .plugin(vacant_room::init())
+        .plugin(notice_code::init());
     #[cfg(mobile)]
     let builder = builder
         .plugin(tauri_plugin_biometric::init())
@@ -655,6 +646,7 @@ pub fn run() {
         .manage(CisState::default())
         .manage(vacant_room::VacantRoomImageState::default())
         .invoke_handler(tauri::generate_handler![
+            notice_code::recognize_notice_code,
             cis_auth_status,
             cis_configure_session,
             cis_clear_session,

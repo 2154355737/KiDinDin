@@ -12,6 +12,10 @@ export type AppSettings = {
     motion: MotionPreference;
     showToolDescriptions: boolean;
   };
+  unreachableVisit: {
+    addWatermark: boolean;
+    noticeCodeDeduplication: boolean;
+  };
   diagnostics: {
     showWatermarkGenerationDebug: boolean;
   };
@@ -29,6 +33,10 @@ export const defaultAppSettings: AppSettings = {
     density: "comfortable",
     motion: "system",
     showToolDescriptions: true,
+  },
+  unreachableVisit: {
+    addWatermark: true,
+    noticeCodeDeduplication: true,
   },
   diagnostics: {
     showWatermarkGenerationDebug: false,
@@ -56,6 +64,7 @@ function objectOrEmpty(value: unknown): Record<string, unknown> {
 export function normalizeAppSettings(value: unknown): AppSettings {
   const candidate = objectOrEmpty(value);
   const display = objectOrEmpty(candidate.display);
+  const unreachableVisit = objectOrEmpty(candidate.unreachableVisit);
   const diagnostics = objectOrEmpty(candidate.diagnostics);
   const vacantRoom = objectOrEmpty(candidate.vacantRoom);
   const density = display.density === "compact" ? "compact" : "comfortable";
@@ -75,6 +84,10 @@ export function normalizeAppSettings(value: unknown): AppSettings {
         display.showToolDescriptions,
         defaultAppSettings.display.showToolDescriptions,
       ),
+    },
+    unreachableVisit: {
+      addWatermark: booleanOr(unreachableVisit.addWatermark, defaultAppSettings.unreachableVisit.addWatermark),
+      noticeCodeDeduplication: booleanOr(unreachableVisit.noticeCodeDeduplication, true),
     },
     diagnostics: {
       showWatermarkGenerationDebug: booleanOr(

@@ -9,6 +9,8 @@ import {
 } from "react";
 import { onBackButtonPress } from "@tauri-apps/api/app";
 import { FilterPicker } from "./components/FilterPicker";
+import { NoticeCodePanel } from "./components/NoticeCodePanel";
+import { useNoticeCodeDeduplication } from "./hooks/useNoticeCodeDeduplication";
 import { Icon } from "./components/Icon";
 import { PrimaryNav } from "./components/Navigation";
 import { SessionExpiryNotice } from "./components/SessionExpiryNotice";
@@ -358,7 +360,7 @@ type WatermarkedOrderUpload = {
   bizId: string;
   previewFiles: [File, File];
   sourceFiles: [File, File];
-  watermarked: true;
+  watermarked: boolean;
 };
 
 type WatermarkPreparationState = {
@@ -389,14 +391,15 @@ function isReusableWatermarkedUpload(
   uploaded: WatermarkedOrderUpload | undefined,
   storefrontFile: File | undefined,
   detailFile: File | undefined,
+  addWatermark: boolean,
 ) {
   if (!uploaded) return false;
   try {
     return (
-      uploaded.watermarked === true &&
-      Boolean(uploaded.bizId.trim()) &&
+      uploaded.watermarked === addWatermark &&
+      (!addWatermark || Boolean(uploaded.bizId.trim())) &&
       uploaded.previewFiles.length === 2 &&
-      uploaded.address === registeredWatermarkAddress(order) &&
+      uploaded.address === (addWatermark ? registeredWatermarkAddress(order) : "") &&
       uploaded.sourceFiles[0] === storefrontFile &&
       uploaded.sourceFiles[1] === detailFile
     );
@@ -986,6 +989,20 @@ export default function App() {
       ),
     [orders, selected, sortDirection, sortField],
   );
+  const noticeCodes = useNoticeCodeDeduplication(
+    localAccountKey, appSettings.unreachableVisit.noticeCodeDeduplication,
+    detailCloseupFiles, selectedOrders,
+  );
+  const noticeCodePanel = (orderId?: string, summary = false) => (
+    <NoticeCodePanel enabled={appSettings.unreachableVisit.noticeCodeDeduplication}
+      controller={noticeCodes} orderId={orderId} summary={summary}
+      onEnabledChange={(enabled) => {
+        noticeCodes.setEnabledImmediately(enabled);
+        setAppSettings((current) => ({ ...current, unreachableVisit: {
+          ...current.unreachableVisit, noticeCodeDeduplication: enabled,
+        } }));
+      }} />
+  );
   const watermarkedUploadsReady = useMemo(
     () =>
       selectedOrders.length > 0 &&
@@ -995,6 +1012,7 @@ export default function App() {
           watermarkedUploads[order.id],
           historyFiles[order.id],
           detailCloseupFiles[order.id],
+          appSettings.unreachableVisit.addWatermark,
         ),
       ),
     [
@@ -1002,6 +1020,7 @@ export default function App() {
       historyFiles,
       selectedOrders,
       watermarkedUploads,
+      appSettings.unreachableVisit.addWatermark,
     ],
   );
   const allManualReadyByOrder = useMemo(
@@ -2520,18 +2539,19 @@ export default function App() {
   const prepareWatermarkedUploads = async (
     ordersToPrepare: readonly WorkOrder[],
   ) => {
+    const addWatermark = appSettings.unreachableVisit.addWatermark;
     const sequence = watermarkPreparationSequenceRef.current + 1;
     watermarkPreparationSequenceRef.current = sequence;
     if (!ordersToPrepare.length) {
       setWatermarkedUploads({});
       setWatermarkPreparationByOrder({});
       setWatermarkPreparationRunning(false);
-      setWatermarkPreparationMessage("当前没有可生成水印的工单");
+      setWatermarkPreparationMessage("当前没有可准备图片的工单");
       return;
     }
     setWatermarkPreparationRunning(true);
     setWatermarkPreparationMessage(
-      `正在按顺序准备 1/${ordersToPrepare.length} 个工单的水印预览…`,
+      `正在按顺序准备 1/${ordersToPrepare.length} 个工单的图片预览…`,
     );
 
     const nextWatermarkedUploads: Record<string, WatermarkedOrderUpload> = {};
@@ -2544,6 +2564,7 @@ export default function App() {
           existing,
           historyFiles[order.id],
           detailCloseupFiles[order.id],
+          appSettings.unreachableVisit.addWatermark,
         );
         if (reusable && existing) {
           nextWatermarkedUploads[order.id] = existing;
@@ -2553,7 +2574,7 @@ export default function App() {
           order.id,
           {
             status: reusable ? "ready" : "pending",
-            message: reusable ? "已复用本次确认的水印图片" : "等待生成",
+            message: reusable ? "已复用本次确认的上传图片" : "等待生成",
           } satisfies WatermarkPreparationState,
         ];
       }),
@@ -2574,6 +2595,24 @@ export default function App() {
         setWatermarkPreparationByOrder((current) => ({
           ...current,
           [order.id]: { status: "error", message: "缺少两张提交图片" },
+        }));
+        continue;
+      }
+
+      if (!addWatermark) {
+        // Local confirmation must not issue an upload/watermark request.
+        nextWatermarkedUploads[order.id] = {
+          address: "",
+          bizId: "",
+          previewFiles: [storefrontFile, detailFile],
+          sourceFiles: [storefrontFile, detailFile],
+          watermarked: false,
+        };
+        readyOrderIds.add(order.id);
+        setWatermarkedUploads({ ...nextWatermarkedUploads });
+        setWatermarkPreparationByOrder((current) => ({
+          ...current,
+          [order.id]: { status: "ready", message: "本地图片已就绪，提交时普通上传（不加水印）" },
         }));
         continue;
       }
@@ -2600,10 +2639,10 @@ export default function App() {
 
       setWatermarkPreparationByOrder((current) => ({
         ...current,
-        [order.id]: { status: "generating", message: "正在生成水印预览" },
+        [order.id]: { status: "generating", message: "正在生成图片预览" },
       }));
       setWatermarkPreparationMessage(
-        `正在生成 ${index + 1}/${ordersToPrepare.length}：${label} 的水印预览…`,
+        `正在生成 ${index + 1}/${ordersToPrepare.length}：${label} 的图片预览…`,
       );
 
       const debugEnabled = appSettings.diagnostics.showWatermarkGenerationDebug;
@@ -2617,7 +2656,7 @@ export default function App() {
         setWatermarkPreparationByOrder((current) => ({
           ...current,
           [order.id]: {
-            ...(current[order.id] ?? { status: "generating", message: "正在生成水印预览" }),
+            ...(current[order.id] ?? { status: "generating", message: "正在生成图片预览" }),
             debug: [...debugSteps],
           },
         }));
@@ -2637,7 +2676,9 @@ export default function App() {
       const totalStartedAt = performance.now();
 
       try {
-        const address = registeredWatermarkAddress(order);
+        const address = appSettings.unreachableVisit.addWatermark
+          ? registeredWatermarkAddress(order)
+          : "";
         const uploaded = await uploadWorkOrderFiles(
           [storefrontFile, detailFile],
           "",
@@ -2647,7 +2688,8 @@ export default function App() {
               ? (timing: WorkOrderUploadTiming) =>
                   appendDebugStep(timing.label, timing.durationMs)
               : undefined,
-            securityWatermark: true,
+            securityWatermark: appSettings.unreachableVisit.addWatermark,
+            compressBeforeUpload: false,
             watermarkAddress: address,
           },
         );
@@ -2656,18 +2698,18 @@ export default function App() {
         );
         if (attachments.length < 2) {
           attachments = (
-            await measureDebugStep("补充查询水印附件列表", () =>
+            await measureDebugStep("补充查询图片附件列表", () =>
               fetchWorkOrderFiles(uploaded.data.bizId),
             )
           ).filter((file) => String(file.downloadFilePath ?? "").trim());
         }
         if (attachments.length !== 2) {
           throw new Error(
-            `水印附件组应恰好包含两张图片，实际返回 ${attachments.length} 张`,
+            `图片附件组应恰好包含两张图片，实际返回 ${attachments.length} 张`,
           );
         }
         const [storefrontPreview, detailPreview] = await measureDebugStep(
-          "并行下载两张水印预览",
+          "并行下载两张图片预览",
           () =>
             Promise.all(
               attachments.map((attachment) => downloadWorkOrderFile(attachment)),
@@ -2680,7 +2722,7 @@ export default function App() {
           bizId: uploaded.data.bizId,
           previewFiles: [storefrontPreview, detailPreview],
           sourceFiles: [storefrontFile, detailFile],
-          watermarked: true,
+          watermarked: appSettings.unreachableVisit.addWatermark,
         };
         readyOrderIds.add(order.id);
         setWatermarkedUploads({ ...nextWatermarkedUploads });
@@ -2688,11 +2730,12 @@ export default function App() {
           ...current,
           [order.id]: {
             status: "ready",
-            message: "水印预览已生成",
+            message: "图片预览已生成",
             ...(debugEnabled ? { debug: [...debugSteps] } : {}),
           },
         }));
       } catch (error) {
+        if (watermarkPreparationSequenceRef.current !== sequence) return;
         appendDebugStep("本工单总耗时", performance.now() - totalStartedAt);
         delete nextWatermarkedUploads[order.id];
         setWatermarkedUploads({ ...nextWatermarkedUploads });
@@ -2713,7 +2756,9 @@ export default function App() {
     setWatermarkPreparationMessage(
       failedCount
         ? `已生成 ${readyOrderIds.size}/${ordersToPrepare.length} 单，${failedCount} 单需要重新生成`
-        : `已逐单生成 ${readyOrderIds.size} 个工单的水印预览，请确认后提交`,
+        : addWatermark
+          ? `已逐单生成 ${readyOrderIds.size} 个工单的图片预览，请确认后提交`
+          : `已准备 ${readyOrderIds.size} 个工单的本地预览；未请求上传或水印处理，开始提交后普通上传`,
     );
   };
 
@@ -2747,6 +2792,8 @@ export default function App() {
         );
         return;
       }
+      const codeConflict = await noticeCodes.validate(selectedOrders);
+      if (codeConflict) { setLoadError(codeConflict); return; }
       setScreen("confirm");
       void prepareWatermarkedUploads(selectedOrders);
     } catch (error) {
@@ -2774,7 +2821,9 @@ export default function App() {
     screen,
   ]);
 
+  const batchStartingRef = useRef(false);
   const runBatch = async () => {
+    if (batchStartingRef.current || running) return;
     if (
       submitMode !== "all-manual" ||
       !selectedOrders.length ||
@@ -2788,9 +2837,15 @@ export default function App() {
     )
       return;
     if (watermarkPreparationRunning || !watermarkedUploadsReady) {
-      setLoadError("仍有工单的水印预览未就绪，请在确认页完成生成后再提交");
+      setLoadError("仍有工单的图片预览未就绪，请在确认页完成生成后再提交");
       return;
     }
+    batchStartingRef.current = true;
+    try {
+      const codeConflict = await noticeCodes.validate(selectedOrders);
+      if (codeConflict) { setLoadError(codeConflict); return; }
+    } finally { batchStartingRef.current = false; }
+    const batchAccount = localAccountKey;
     setBatchOrderIds(selectedOrders.map((order) => order.id));
     setRunning(true);
     setPaused(false);
@@ -2804,7 +2859,7 @@ export default function App() {
 
       if (!watermarkedUpload) {
         setOrderStatus(order.id, "关闭失败");
-        setRunMessage(`${order.woNumber} 缺少已确认的带水印附件，已停止该单`);
+        setRunMessage(`${order.woNumber} 缺少已确认的图片附件，已停止该单`);
         continue;
       }
 
@@ -2867,9 +2922,40 @@ export default function App() {
         await wait(delaySeconds * 1000);
       }
       submittedCount += 1;
+      let bizId = watermarkedUpload.bizId;
+      if (!watermarkedUpload.watermarked && !bizId) {
+        try {
+          setRunMessage(`正在普通上传 ${order.woNumber} 的两张照片（不加水印）…`);
+          const uploaded = await uploadWorkOrderFiles(watermarkedUpload.previewFiles, "", {
+            securityWatermark: false,
+            compressBeforeUpload: false,
+          });
+          let attachments = (uploaded.data.sysAttachList ?? []).filter((file) =>
+            String(file.downloadFilePath ?? "").trim());
+          if (attachments.length < 2) {
+            attachments = (await fetchWorkOrderFiles(uploaded.data.bizId)).filter((file) =>
+              String(file.downloadFilePath ?? "").trim());
+          }
+          if (attachments.length !== 2) {
+            throw new Error(`图片附件组应恰好包含两张图片，实际返回 ${attachments.length} 张`);
+          }
+          bizId = uploaded.data.bizId;
+          setWatermarkedUploads((current) => current[order.id] === watermarkedUpload
+            ? { ...current, [order.id]: { ...watermarkedUpload, bizId } }
+            : current);
+        } catch (error) {
+          setOrderStatus(order.id, "关闭失败");
+          setRunMessage(`${order.woNumber} 普通上传失败，未执行关闭：${messageOf(error)}`);
+          continue;
+        }
+      }
+      if (!bizId.trim()) {
+        setOrderStatus(order.id, "关闭失败");
+        setRunMessage(`${order.woNumber} 缺少已上传的附件组，未执行关闭`);
+        continue;
+      }
       try {
-        setRunMessage(`正在使用 ${order.woNumber} 已确认的带水印照片…`);
-        const bizId = watermarkedUpload.bizId;
+        setRunMessage(`正在使用 ${order.woNumber} 已确认的上传照片…`);
         setRunMessage(`正在关闭安检工单 ${order.woNumber}…`);
         queuePendingLogRetry(order);
         await closeSecurityCheckWorkOrder({
@@ -2899,6 +2985,7 @@ export default function App() {
           continue;
         }
       }
+      await noticeCodes.recordClosed(order, detailCloseupFiles[order.id], batchAccount);
       try {
         setRunMessage(`正在检查并写入 ${order.woNumber} 的流转日志…`);
         const created = await ensureUnreachableExchangeLog(order);
@@ -3889,6 +3976,7 @@ export default function App() {
           )}
           {screen === "mode" && (
             <ModePage
+            noticeCodePanel={noticeCodePanel()}
             mode={submitMode}
             intervalMinSeconds={submitIntervalMinSeconds}
             intervalMaxSeconds={submitIntervalMaxSeconds}
@@ -3955,6 +4043,7 @@ export default function App() {
           )}
           {screen === "prepare" && activeOrder && (
             <PreparePage
+            noticeCodePanel={noticeCodePanel(activeOrder.id)}
             orders={selectedOrders}
             activeOrder={activeOrder}
             submitMode={submitMode}
@@ -4070,6 +4159,7 @@ export default function App() {
           {screen === "confirm" && (
             <>
             <ConfirmPage
+            noticeCodePanel={noticeCodePanel(undefined, true)}
             orders={selectedOrders}
             submitMode={submitMode}
             historyFiles={historyFiles}
@@ -4080,6 +4170,7 @@ export default function App() {
             watermarkPreparationRunning={watermarkPreparationRunning}
             watermarkPreparationMessage={watermarkPreparationMessage}
             watermarksReady={watermarkedUploadsReady}
+            addWatermark={appSettings.unreachableVisit.addWatermark}
             reason={reason}
             remark={remark}
             operatorName={operatorName}
@@ -4121,6 +4212,7 @@ export default function App() {
             running={running}
             />
           )}
+          {screen === "records" && noticeCodes.warning && <p role="status" className="storefront-prefill-summary">{noticeCodes.warning}</p>}
           {screen === "records" && (
             <RecordsPage
             orders={batchOrders}

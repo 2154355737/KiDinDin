@@ -16,6 +16,7 @@ const KNOWN_DATABASE_NAMES = [
   "kidindin-signatures",
   "kidindin-unreachable-prefills",
   "kidindin-upload-file-names",
+  "kidindin-notice-codes",
 ] as const;
 
 const SAFE_DATABASE_NAMES = new Set<string>(KNOWN_DATABASE_NAMES);
@@ -122,6 +123,15 @@ type RegisteredDatabaseSchema = {
 };
 
 const DATABASE_SCHEMAS: Record<string, RegisteredDatabaseSchema> = {
+  "kidindin-notice-codes": {
+    version: 1,
+    stores: [{
+      autoIncrement: false,
+      indexes: [{ keyPath: "accountKey", multiEntry: false, name: "accountKey", unique: false }],
+      keyPath: "key",
+      name: "noticeCodes",
+    }],
+  },
   "kidindin-local-work-orders": {
     version: 1,
     stores: [{
@@ -141,12 +151,17 @@ const DATABASE_SCHEMAS: Record<string, RegisteredDatabaseSchema> = {
     }],
   },
   "kidindin-unreachable-prefills": {
-    version: 1,
+    version: 2,
     stores: [{
       autoIncrement: false,
       indexes: [{ keyPath: "accountKey", multiEntry: false, name: "accountKey", unique: false }],
       keyPath: "key",
       name: "storefrontPhotos",
+    }, {
+      autoIncrement: false,
+      indexes: [{ keyPath: "accountKey", multiEntry: false, name: "accountKey", unique: false }],
+      keyPath: "key",
+      name: "storefrontPhotoDrafts",
     }],
   },
   "kidindin-upload-file-names": {
@@ -732,6 +747,13 @@ async function databaseNames() {
 function assertDatabaseSchema(snapshot: IndexedDbDatabaseBackup, location: string) {
   const registered = DATABASE_SCHEMAS[snapshot.name];
   if (!registered) throw new Error(`${location}.name 不是当前版本登记的 KiDinDin WebDB`);
+  // Old backups contain only completed photos; upgrade their schema without
+  // changing records or requiring users to discard their existing backup.
+  if (snapshot.name === "kidindin-unreachable-prefills" && snapshot.version === 1 &&
+      snapshot.stores.length === 1 && snapshot.stores[0].name === "storefrontPhotos") {
+    snapshot.version = 2;
+    snapshot.stores.push({ ...registered.stores[1], records: [] });
+  }
   if (snapshot.version !== registered.version) {
     throw new Error(
       `${location}.version 为 ${snapshot.version}，当前仅支持 ${registered.version}；请使用匹配版本的应用恢复`,
@@ -1608,6 +1630,12 @@ function assertOpenDatabaseSchema(
 async function databaseExistsAndMatches(snapshot: IndexedDbDatabaseBackup) {
   const existing = await openExistingDatabase(snapshot.name);
   if (!existing) return false;
+  if (snapshot.name === "kidindin-unreachable-prefills" && existing.version === 1) {
+    existing.close();
+    const { ensureStorefrontPhotoDatabase } = await import("./storefrontPrefillStore");
+    await ensureStorefrontPhotoDatabase();
+    return databaseExistsAndMatches(snapshot);
+  }
   try {
     assertOpenDatabaseSchema(existing, snapshot);
     return true;
@@ -1621,6 +1649,12 @@ async function openDatabaseForRestore(snapshot: IndexedDbDatabaseBackup) {
   if (!registered) throw new Error(`${snapshot.name} 不是当前版本登记的 WebDB`);
   const existing = await openExistingDatabase(snapshot.name);
   if (!existing) return openDatabaseAtVersion(snapshot, registered.version, true);
+  if (snapshot.name === "kidindin-unreachable-prefills" && existing.version === 1) {
+    existing.close();
+    const { ensureStorefrontPhotoDatabase } = await import("./storefrontPrefillStore");
+    await ensureStorefrontPhotoDatabase();
+    return openDatabaseForRestore(snapshot);
+  }
   try {
     assertOpenDatabaseSchema(existing, snapshot);
     return existing;
@@ -1823,6 +1857,18 @@ function validateDecodedRecord(
   else if (databaseName === "kidindin-signatures") validateSignatureRecord(value, `${location}.value`);
   else if (databaseName === "kidindin-unreachable-prefills") validateStorefrontRecord(value, `${location}.value`);
   else if (databaseName === "kidindin-upload-file-names") validateUploadFileNameRecord(value, `${location}.value`);
+  else if (databaseName === "kidindin-notice-codes") {
+    assertCompositeAccountKey(value, "key", location);
+    recordString(value, "label", location, { maxLength: 4096 });
+    const code = recordString(value, "code", location, { maxLength: 32 });
+    if (!/^\d{6,32}$/.test(code)) throw new Error(`${location}.code 无效`);
+    const hash = recordString(value, "sha256", location, { maxLength: 64 });
+    if (!/^[a-f0-9]{64}$/.test(hash)) throw new Error(`${location}.sha256 无效`);
+    recordDate(value, "updatedAt", location);
+    if (!["barcode", "matched", "manual"].includes(String(value.source))) throw new Error(`${location}.source 无效`);
+    if (value.status !== "used" && value.status !== "void") throw new Error(`${location}.status 无效`);
+    if (value.preview !== null && (!(value.preview instanceof Blob) || value.preview.type !== "image/jpeg" || value.preview.size > 256 * 1024)) throw new Error(`${location}.preview 无效`);
+  }
   const inlineKey = databaseName === "kidindin-upload-file-names" ? value.name : value.key;
   assertInlineKey(key, inlineKey, location);
 }
@@ -1905,6 +1951,9 @@ function mergeRestoredRecord(
   }
   if (databaseName === "kidindin-upload-file-names") {
     return mergedUploadFileNameRecord(current, incoming);
+  }
+  if (databaseName === "kidindin-notice-codes") {
+    return timestampOf(incoming, "updatedAt") >= timestampOf(current, "updatedAt") ? incoming : current;
   }
   return incoming;
 }

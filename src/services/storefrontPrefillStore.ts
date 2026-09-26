@@ -16,9 +16,30 @@ export type StorefrontPhotoPrefill = {
 };
 
 const DATABASE_NAME = "kidindin-unreachable-prefills";
-const DATABASE_VERSION = 1;
+const DATABASE_VERSION = 2;
 const STORE_NAME = "storefrontPhotos";
+const DRAFT_STORE_NAME = "storefrontPhotoDrafts";
 const ACCOUNT_INDEX = "accountKey";
+type PhotoDraft = StorefrontPhotoPrefill & { revision: string };
+const operations = new Map<string, Promise<unknown>>();
+
+function inPhotoOrder<T>(key: string, action: () => Promise<T>): Promise<T> {
+  const result = (operations.get(key) ?? Promise.resolve()).then(action, action);
+  const tail = result.then(() => undefined, () => undefined);
+  operations.set(key, tail);
+  void tail.then(() => { if (operations.get(key) === tail) operations.delete(key); });
+  return result;
+}
+
+function durableWrite(database: IDBDatabase, stores: string | string[]) {
+  try {
+    return database.transaction(stores, "readwrite", { durability: "strict" });
+  } catch (error) {
+    if (!(error instanceof TypeError) &&
+        !(error instanceof DOMException && error.name === "NotSupportedError")) throw error;
+    return database.transaction(stores, "readwrite");
+  }
+}
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -28,6 +49,9 @@ function errorDetail(error: unknown) {
 }
 
 function databaseError(action: string, error: unknown) {
+  if (error instanceof DOMException && error.name === "QuotaExceededError") {
+    return new Error(`${action}失败：本机存储空间不足，请释放空间后重试；不要清除 App 数据`);
+  }
   return new Error(`${action}失败${errorDetail(error)}`);
 }
 
@@ -74,7 +98,7 @@ function parsePrefill(value: unknown, location: string) {
     throw new Error(`${location}.key 与账号和工单标识不匹配`);
   }
   const size = value.size;
-  if (typeof size !== "number" || !Number.isFinite(size) || size <= 0) {
+  if (typeof size !== "number" || !Number.isSafeInteger(size) || size <= 0 || size !== value.blob.size) {
     throw new Error(`${location}.size 必须是有效的图片大小`);
   }
   const savedAt = requireString(value, "savedAt", location, false);
@@ -115,6 +139,10 @@ function openDatabase() {
         if (!store.indexNames.contains(ACCOUNT_INDEX)) {
           store.createIndex(ACCOUNT_INDEX, "accountKey", { unique: false });
         }
+        if (!database.objectStoreNames.contains(DRAFT_STORE_NAME)) {
+          const drafts = database.createObjectStore(DRAFT_STORE_NAME, { keyPath: "key" });
+          drafts.createIndex(ACCOUNT_INDEX, "accountKey", { unique: false });
+        }
       } catch (error) {
         request.transaction?.abort();
         if (!settled) {
@@ -144,6 +172,11 @@ function openDatabase() {
       resolve(database);
     };
   });
+}
+
+export async function ensureStorefrontPhotoDatabase() {
+  const database = await openDatabase();
+  database.close();
 }
 
 function requestResult<T>(request: IDBRequest<T>, action: string) {
@@ -181,7 +214,7 @@ function validateImage(file: File) {
   }
 }
 
-export async function getStorefrontPhotoPrefill(
+export async function getSavedStorefrontPhotoPrefill(
   accountKey: string,
   woHeaderId: string,
 ) {
@@ -209,6 +242,9 @@ export async function getStorefrontPhotoPrefills(
     new Set(woHeaderIds.map((value) => value.trim()).filter(Boolean)),
   );
   if (!uniqueIds.length) return {} as Record<string, StorefrontPhotoPrefill>;
+
+  // Do not silently use an older photo when a confirmed replacement needs recovery.
+  for (const id of uniqueIds) await recoverStorefrontPhotoPrefill(accountKey, id);
 
   const database = await openDatabase();
   try {
@@ -308,7 +344,7 @@ export async function listStorefrontPhotoPrefills(accountKey: string) {
   }
 }
 
-export async function saveStorefrontPhotoPrefill(
+async function stageStorefrontPhoto(
   accountKey: string,
   order: WorkOrder,
   file: File,
@@ -316,20 +352,24 @@ export async function saveStorefrontPhotoPrefill(
   assertIdentifier(accountKey, "账号标识");
   assertIdentifier(order.woHeaderId, "工单标识");
   validateImage(file);
-  const compressedFile = await compressStorefrontPhoto(file);
-  const mimeType = compressedFile.type || "image/jpeg";
+  // Detach camera/provider-backed files before any background processing.
+  const bytes = await file.arrayBuffer();
+  if (!bytes.byteLength || bytes.byteLength !== file.size) {
+    throw new Error("门头照片读取不完整，请重新拍照或选择图片");
+  }
+  const mimeType = file.type;
   const savedAt = new Date().toISOString();
   const prefill = parsePrefill(
     {
       accountKey,
-      blob: compressedFile.slice(0, compressedFile.size, mimeType),
+      blob: new Blob([bytes], { type: mimeType }),
       fileName:
-        compressedFile.name.trim() || `storefront-${order.woHeaderId}.jpg`,
+        file.name.trim() || `storefront-${order.woHeaderId}.jpg`,
       key: makeStorefrontPrefillKey(accountKey, order.woHeaderId),
       mimeType,
       resident: order.resident,
       savedAt,
-      size: compressedFile.size,
+      size: bytes.byteLength,
       unit: order.unit,
       woHeaderId: order.woHeaderId,
       woNumber: order.woNumber,
@@ -339,28 +379,143 @@ export async function saveStorefrontPhotoPrefill(
 
   const database = await openDatabase();
   try {
-    const transaction = database.transaction(STORE_NAME, "readwrite");
-    transaction.objectStore(STORE_NAME).put(prefill);
-    await transactionDone(transaction, "保存门头预填照片");
-    return prefill;
+    const draft: PhotoDraft = { ...prefill, revision: crypto.randomUUID() };
+    const transaction = durableWrite(database, DRAFT_STORE_NAME);
+    const done = transactionDone(transaction, "保存门头照片恢复草稿");
+    transaction.objectStore(DRAFT_STORE_NAME).put(draft);
+    await done;
+    return draft;
   } finally {
     database.close();
   }
 }
 
-export async function deleteStorefrontPhotoPrefill(
+async function deletePhoto(
   accountKey: string,
   woHeaderId: string,
 ) {
   const key = makeStorefrontPrefillKey(accountKey, woHeaderId);
   const database = await openDatabase();
   try {
-    const transaction = database.transaction(STORE_NAME, "readwrite");
+    const transaction = durableWrite(database, [STORE_NAME, DRAFT_STORE_NAME]);
+    const done = transactionDone(transaction, "删除门头预填照片");
     transaction.objectStore(STORE_NAME).delete(key);
-    await transactionDone(transaction, "删除门头预填照片");
+    transaction.objectStore(DRAFT_STORE_NAME).delete(key);
+    await done;
   } finally {
     database.close();
   }
+}
+
+async function readDraft(accountKey: string, woHeaderId: string): Promise<PhotoDraft | null> {
+  const database = await openDatabase();
+  try {
+    const transaction = database.transaction(DRAFT_STORE_NAME, "readonly");
+    const [value] = await Promise.all([
+      requestResult<unknown>(transaction.objectStore(DRAFT_STORE_NAME).get(
+        makeStorefrontPrefillKey(accountKey, woHeaderId)), "读取照片恢复草稿"),
+      transactionDone(transaction, "读取照片恢复草稿"),
+    ]);
+    if (value === undefined) return null;
+    const prefill = parsePrefill(value, "照片恢复草稿");
+    return { ...prefill, revision: requireString(value as UnknownRecord, "revision", "照片恢复草稿", false) };
+  } finally {
+    database.close();
+  }
+}
+
+export async function getStorefrontPhotoDraft(accountKey: string, woHeaderId: string) {
+  const draft = await readDraft(accountKey, woHeaderId);
+  return draft ? storefrontPhotoPrefillToFile(draft) : null;
+}
+
+async function finishDraft(draft: PhotoDraft) {
+  const compressed = await compressStorefrontPhoto(storefrontPhotoPrefillToFile(draft));
+  const expectedBytes = new Uint8Array(await compressed.arrayBuffer());
+  if (compressed.type !== "image/jpeg" ||
+      expectedBytes.length < 3 || expectedBytes[0] !== 0xff ||
+      expectedBytes[1] !== 0xd8 || expectedBytes[2] !== 0xff) {
+    throw new Error("压缩结果不是有效的 JPEG 图片");
+  }
+  const prefill = parsePrefill({
+    ...draft,
+    blob: compressed.slice(),
+    size: compressed.size,
+    mimeType: compressed.type,
+    fileName: compressed.name,
+  }, "压缩后的门头照片");
+  const database = await openDatabase();
+  try {
+    const transaction = durableWrite(database, [STORE_NAME, DRAFT_STORE_NAME]);
+    const done = transactionDone(transaction, "保存门头预填照片");
+    const request = transaction.objectStore(DRAFT_STORE_NAME).get(draft.key);
+    request.onsuccess = () => {
+      // A newer capture or deletion from another window supersedes this task.
+      if (request.result?.revision !== draft.revision) {
+        transaction.abort();
+        return;
+      }
+      transaction.objectStore(STORE_NAME).put(prefill);
+    };
+    await done;
+  } finally {
+    database.close();
+  }
+  // Confirm the persisted Blob, not the in-memory preview, before reporting success.
+  const saved = await getSavedStorefrontPhotoPrefill(draft.accountKey, draft.woHeaderId);
+  const actualBytes = saved ? new Uint8Array(await saved.blob.arrayBuffer()) : null;
+  if (!saved || saved.savedAt !== prefill.savedAt || !actualBytes ||
+      actualBytes.length !== expectedBytes.length ||
+      actualBytes.some((byte, index) => byte !== expectedBytes[index])) {
+    throw new Error("照片写入后回读校验失败，恢复草稿仍会保留，请重试");
+  }
+  const cleanupDatabase = await openDatabase();
+  try {
+    const transaction = durableWrite(cleanupDatabase, DRAFT_STORE_NAME);
+    const done = transactionDone(transaction, "完成照片保存校验");
+    const request = transaction.objectStore(DRAFT_STORE_NAME).get(draft.key);
+    request.onsuccess = () => {
+      if (request.result?.revision === draft.revision) {
+        transaction.objectStore(DRAFT_STORE_NAME).delete(draft.key);
+      } else {
+        transaction.abort();
+      }
+    };
+    await done;
+  } finally {
+    cleanupDatabase.close();
+  }
+  return saved;
+}
+
+export function saveStorefrontPhotoPrefill(accountKey: string, order: WorkOrder, file: File) {
+  const key = makeStorefrontPrefillKey(accountKey, order.woHeaderId);
+  const orderSnapshot = { ...order };
+  return inPhotoOrder(key, async () => {
+    const draft = await stageStorefrontPhoto(accountKey, orderSnapshot, file);
+    try {
+      return await finishDraft(draft);
+    } catch (error) {
+      throw new Error(`照片尚未完成保存；原图恢复草稿已写入本机，重新打开此工单可重试${errorDetail(error)}`);
+    }
+  });
+}
+
+export function recoverStorefrontPhotoPrefill(accountKey: string, woHeaderId: string) {
+  return inPhotoOrder(makeStorefrontPrefillKey(accountKey, woHeaderId), async () => {
+    const draft = await readDraft(accountKey, woHeaderId);
+    if (draft) await finishDraft(draft);
+  });
+}
+
+export async function getStorefrontPhotoPrefill(accountKey: string, woHeaderId: string) {
+  await recoverStorefrontPhotoPrefill(accountKey, woHeaderId);
+  return getSavedStorefrontPhotoPrefill(accountKey, woHeaderId);
+}
+
+export function deleteStorefrontPhotoPrefill(accountKey: string, woHeaderId: string) {
+  return inPhotoOrder(makeStorefrontPrefillKey(accountKey, woHeaderId),
+    () => deletePhoto(accountKey, woHeaderId));
 }
 
 export function storefrontPhotoPrefillToFile(

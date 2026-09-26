@@ -514,6 +514,29 @@ export function SettingsPage({
             {overlayStatus?.accessibilityEnabled ? "工单识别辅助功能已启用" : "开启工单识别辅助功能"}
           </button>
         </div>
+        <div className="settings-page-group unreachable-watermark-setting">
+          <h3>到访不遇照片</h3>
+          <SettingsSwitch
+            checked={appSettings.unreachableVisit.noticeCodeDeduplication}
+            disabled={backupBusy}
+            label="通知单编码去重"
+            description="识别详细单的条码和印刷编码，检查本批次与当前账号本地记录；异常可关闭，保留图片内容去重。"
+            onChange={(checked) => setAppSettings((current) => ({
+              ...current,
+              unreachableVisit: { ...current.unreachableVisit, noticeCodeDeduplication: checked },
+            }))}
+          />
+          <SettingsSwitch
+            checked={appSettings.unreachableVisit.addWatermark}
+            disabled={backupBusy}
+            label="添加到访不遇水印"
+            description="开启后为批量到访不遇的门头照和详细单近景照添加水印；关闭后不新增水印，图片已有水印不会移除。"
+            onChange={(checked) => setAppSettings((current) => ({
+              ...current,
+              unreachableVisit: { ...current.unreachableVisit, addWatermark: checked },
+            }))}
+          />
+        </div>
         <div className="settings-page-group">
           <h3>调试与诊断</h3>
           <SettingsSwitch

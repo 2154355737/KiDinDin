@@ -10,6 +10,7 @@ import {
   type VacantRoomExtraction,
   type VacantRoomProgressStage,
 } from "../services/vacantRoomApi";
+import { isVacantRoomTarget } from "../services/vacantRoomTarget";
 import type { WorkOrder } from "../types/workOrder";
 
 type ExtractionStatus =
@@ -66,14 +67,7 @@ export function VacantRoomPage({
   onDateChange,
   orders,
 }: VacantRoomPageProps) {
-  const vacantOrders = useMemo(
-    () =>
-      orders.filter(
-        (order) =>
-          order.backendStatusCode === "20" && order.resident.includes("需首检"),
-      ),
-    [orders],
-  );
+  const vacantOrders = useMemo(() => orders.filter(isVacantRoomTarget), [orders]);
   const vacantOrderKey = vacantOrders.map((order) => order.id).join("|");
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
   const [selectedImageHashes, setSelectedImageHashes] = useState<
@@ -321,7 +315,7 @@ export function VacantRoomPage({
         <section className="vacant-room-empty">
           <Icon name="home" size={24} />
           <b>当天没有识别到空房工单</b>
-          <span>空房按住户字段中的“需首检”识别。</span>
+          <span>空房按住户标记“需首检”或工单名称“需持安检单开户”识别。</span>
         </section>
       ) : (
         <section className="vacant-room-list">

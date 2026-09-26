@@ -732,3 +732,21 @@
   background: #173127;
   color: #83c4a2;
 }
+
+.unreachable-watermark-setting .settings-page-row {
+  min-height: 44px;
+}
+
+.unreachable-watermark-setting .settings-switch::after {
+  content: "";
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
+
+.unreachable-watermark-setting .settings-switch:focus-visible {
+  outline: 2px solid var(--accent, #1677ff);
+  outline-offset: 4px;
+}
